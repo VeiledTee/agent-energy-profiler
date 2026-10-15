@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-energy-profiler"
+version = "0.1.0"
+description = "Hardware-grounded, operation-level energy profiling for agentic systems"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+# No required runtime dependencies: the package degrades to reporting a domain
+# as unavailable rather than failing, and never fabricates a measurement.
+dependencies = []
+
+[project.optional-dependencies]
+# NVIDIA GPU energy counters. Without it, GPU energy is reported unavailable.
+# nvidia-ml-py is NVIDIA's official binding and provides the `pynvml` module
+# imported by agent_energy_profiler/hardware/nvml.py. The separately published
+# `pynvml` distribution wraps it and emits a FutureWarning on import; do not
+# install both, since they claim the same module name.
+gpu = ["nvidia-ml-py>=12.535"]
+# Figures (agent_energy_profiler.visualize). Imported only when drawing.
+plot = ["matplotlib>=3.5"]
+# Test suite.
+dev = ["pytest>=8"]
+
+[project.scripts]
+aep-sample = "agent_energy_profiler.sampling:main"
+aep-attribute = "agent_energy_profiler.attribution:main"
+aep-validate = "agent_energy_profiler.validation:main"
+aep-aggregate = "agent_energy_profiler.aggregate:main"
+aep-visualize = "agent_energy_profiler.visualize:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+packages = ["agent_energy_profiler", "agent_energy_profiler.hardware"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "frozen_runs: re-attributes full research runs; needs AEP_FROZEN_RUNS_DIR (opt-in)",
+]

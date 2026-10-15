@@ -1,0 +1,29 @@
+{
+  "expected_sha256": {
+    "energy_summary.csv": "7178251bba97199f31a9db809c0a24baeff967fd95bc813a6be68bf3d3f00a39",
+    "events_attributed.jsonl": "e40cf2603302f0c3a7e449bfe12bb441eafe4bf69f7fd0a92d1492d8898551ec",
+    "trajectory_summary.csv": "d10efd1debf1f676fcc0f256d0b2f2a92e23af1dd948173a59e8d324143ba8bb",
+    "trajectory_summary.json": "bf96c30c8f5c611a916792bc16766cc66e00061bebe0cecc729a4c7aea9d5b48"
+  },
+  "kind": "frozen-run slice",
+  "n_events": 1093,
+  "n_power_rows": 307,
+  "power_margin_s": 1.0,
+  "question_ids": [
+    "WebQTest-832_c334509bb5e02cacae1ba2e80c176499",
+    "WebQTrn-1259_1997cb4922db71983be26e6a509950f4",
+    "WebQTest-1384_744a496b907e407b16bc5d7c197dc3f0",
+    "WebQTrn-241_dfb6c97ac9bf2f0ac07f27dd80f9edc2",
+    "WebQTrn-1077_f4a9e5f1e0dcfb82cbadf4771eda7bb5"
+  ],
+  "redactions": [
+    "hardware_id hostname -> redacted-host"
+  ],
+  "reference_commit": "08bbc96dad39b9d059e6e0797d87ec9955830934",
+  "reference_implementation": "Chain-of-Relations-Emissions agent_energy_profiler.attribution",
+  "source_run": "measurement/runs/full_pog-rank-cache_cwq",
+  "source_sha256": {
+    "events.jsonl": "f5c6b2b0fcc455e8f4fcb7efe9e40a293fb7f9716dbe81398d759ff2678ec4bc",
+    "power.csv": "84fad25c75b87bf645c8e753994a75b8152f634bbcfc62008e16499ba2553ae4"
+  }
+}

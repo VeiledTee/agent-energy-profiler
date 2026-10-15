@@ -1,0 +1,8 @@
+# Versions matching the source research environment (Chain-of-Relations-Emissions
+# .venv at commit 08bbc96). Used to verify baseline equivalence:
+#   pip install -e '.[dev,plot,gpu]' -c constraints/baseline.txt
+matplotlib==3.9.2
+numpy==2.5.1
+pandas==3.0.5
+nvidia-ml-py==13.610.43
+pytest==9.1.1

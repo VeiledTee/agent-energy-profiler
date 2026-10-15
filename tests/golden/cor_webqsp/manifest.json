@@ -1,0 +1,29 @@
+{
+  "expected_sha256": {
+    "energy_summary.csv": "8d76f047798f4ea403909e71111f9e2660a91b1e787869364c652836e7f1c76b",
+    "events_attributed.jsonl": "66da2d97a29937767eda1f46620c90e506fe7cb70f75265f9fe2a576390906c5",
+    "trajectory_summary.csv": "faeb372b0c7ed7c6a1ecd945dc862feed5940a8c24b17f10572562e605bbbc1e",
+    "trajectory_summary.json": "8d8d82dd4e36d806f4a32dad595d0061c584176ff1701841d6185cfb5ad41fa3"
+  },
+  "kind": "frozen-run slice",
+  "n_events": 1192,
+  "n_power_rows": 285,
+  "power_margin_s": 1.0,
+  "question_ids": [
+    "WebQTest-0",
+    "WebQTest-1",
+    "WebQTest-3",
+    "WebQTest-6",
+    "WebQTest-7"
+  ],
+  "redactions": [
+    "hardware_id hostname -> redacted-host"
+  ],
+  "reference_commit": "08bbc96dad39b9d059e6e0797d87ec9955830934",
+  "reference_implementation": "Chain-of-Relations-Emissions agent_energy_profiler.attribution",
+  "source_run": "measurement/runs/full_cor-rank-compact_webqsp",
+  "source_sha256": {
+    "events.jsonl": "da0bf71c012e41173c5a01ffff3ba6839bcdd572e87729ea6ccddf3df4bd85c2",
+    "power.csv": "5d5925b35d02963322203afcae806c9a3987ad88cffaedd2b01afdca211b09cb"
+  }
+}

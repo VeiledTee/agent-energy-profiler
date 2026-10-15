@@ -1,0 +1,14 @@
+{
+  "expected_sha256": {
+    "energy_summary.csv": "e9cf97d102b07bf1385f1a6f967de63ffd2faf44e3d57117f372f694bf5a2ea9",
+    "events_attributed.jsonl": "50dcaa1910af97515fcd587e18540520e30ce5ea53f412b12b85f1aacaf5a406",
+    "trajectory_summary.csv": "27d40ccfd138c61b10858d4ee7392f7dc011f413d38dc54c0782b85690204ac0",
+    "trajectory_summary.json": "20c82ae2518442c34c45fe0f567eb62c4a1bda376f01bab4d000aa75747977ea"
+  },
+  "kind": "synthetic",
+  "note": "exercises RAPL, multi-GPU, power-integration fallback, overlap and clock back-step paths absent from the GPU-only frozen runs",
+  "redactions": [],
+  "reference_commit": "08bbc96dad39b9d059e6e0797d87ec9955830934",
+  "reference_implementation": "Chain-of-Relations-Emissions agent_energy_profiler.attribution",
+  "source_run": null
+}
