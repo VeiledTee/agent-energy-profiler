@@ -51,7 +51,7 @@ Quick start:
 
 import importlib
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 #: Submodules reachable as attributes of the package. Resolved on first access
 #: rather than at import (PEP 562), for two reasons:
@@ -68,6 +68,8 @@ __version__ = "0.1.0"
 _SUBMODULES = frozenset({
 	"aggregate", "attribution", "carbon", "events", "labels", "profiler",
 	"schema", "trajectory", "visualize",
+	# schema v2 (Milestone 2)
+	"accounting", "attribution_v2", "measurement", "schema_v2", "session",
 })
 
 #: Values re-exported from submodules, resolved the same way.
@@ -75,12 +77,16 @@ _REEXPORTS = {
 	"span": ("profiler", "span"),
 	"SCHEMA_VERSION": ("schema", "SCHEMA_VERSION"),
 	"Status": ("schema", "Status"),
+	"Session": ("session", "Session"),
+	"Resolution": ("measurement", "Resolution"),
 }
 
 __all__ = [
 	"aggregate", "attribution", "carbon", "events", "labels", "profiler",
 	"schema", "trajectory", "visualize", "span", "SCHEMA_VERSION", "Status",
 	"__version__",
+	"accounting", "attribution_v2", "measurement", "schema_v2", "session",
+	"Session", "Resolution",
 ]
 
 

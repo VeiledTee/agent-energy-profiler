@@ -120,6 +120,9 @@ def main():
 	ap.add_argument("--baseline-src", default="",
 	                help="a source tree to compare against (e.g. an extracted "
 	                     "earlier commit)")
+	ap.add_argument("--v2", action="store_true",
+	                help="also time schema-v2 attribution (attribution_v2) on the "
+	                     "same run, read as v1 input")
 	args = ap.parse_args()
 
 	os.makedirs(args.work_dir, exist_ok=True)
@@ -132,6 +135,18 @@ def main():
 
 	current = attribute(args.src, events, power, os.path.join(args.work_dir, "current"))
 	print(f"current  ({args.src}): {current:.2f} s")
+	if args.v2:
+		out_dir = os.path.join(args.work_dir, "v2")
+		env = dict(os.environ, PYTHONPATH=os.path.abspath(args.src),
+		           PYTHONDONTWRITEBYTECODE="1")
+		started = time.perf_counter()
+		out = subprocess.run(
+			[sys.executable, "-m", "agent_energy_profiler.attribution_v2",
+			 "--spans", events, "--power", power, "--out-dir", out_dir],
+			capture_output=True, text=True, env=env)
+		if out.returncode != 0:
+			raise SystemExit(f"v2 attribution failed:\n{out.stderr}")
+		print(f"v2 attribution: {time.perf_counter() - started:.2f} s")
 	if args.baseline_src:
 		base = attribute(args.baseline_src, events, power,
 		                 os.path.join(args.work_dir, "baseline"))

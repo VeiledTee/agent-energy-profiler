@@ -64,7 +64,10 @@ class TestImportsTouchNoHardware(unittest.TestCase):
 			             "agent_energy_profiler.events", "agent_energy_profiler.profiler",
 			             "agent_energy_profiler.attribution", "agent_energy_profiler.validation",
 			             "agent_energy_profiler.hardware", "agent_energy_profiler.aggregate",
-			             "agent_energy_profiler.trajectory", "agent_energy_profiler.visualize"):
+			             "agent_energy_profiler.trajectory", "agent_energy_profiler.visualize",
+			             "agent_energy_profiler.session", "agent_energy_profiler.measurement",
+			             "agent_energy_profiler.schema_v2", "agent_energy_profiler.accounting",
+			             "agent_energy_profiler.attribution_v2"):
 				importlib.import_module(name)
 			from agent_energy_profiler.hardware import nvml
 			import threading

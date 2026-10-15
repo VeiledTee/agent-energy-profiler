@@ -89,8 +89,11 @@ Equivalence evidence at extraction:
 ## Known measurement limitations
 
 These were inherited at extraction. Items 6, 7, 11, 13 and 14 were fixed in
-Milestone 1 (see [Milestone 1](#milestone-1-correctness-and-performance));
-they are kept here, marked, so the numbering stays stable.
+Milestone 1 (see [Milestone 1](#milestone-1-correctness-and-performance)).
+Items 8, 9, 10 and 12 are addressed in schema v2 only (see
+[Milestone 2](#milestone-2-schema-v2-and-structured-tracing)); the v1 path
+keeps them, by design, so research artifacts do not change. Items are kept
+here, marked, so the numbering stays stable.
 
 **Scope of what is measured**
 
@@ -118,25 +121,29 @@ they are kept here, marked, so the numbering stays stable.
    null.
 7. **RAPL wrap.** *(Fixed in M1.2.)* Wraparound used a hardcoded
    `RAPL_MAX = 2**32` µJ rather than each zone's `max_energy_range_uj`.
-8. **Estimates mixed into measured fields.** When an event has no in-band GPU
-   counter reading, attribution integrates sampled power into
-   `gpu_energy_j`, and that value enters `measured_energy_j`. It is
-   distinguished only by `gpu_energy_source = "power_integration"`, while the
-   trajectory layer refuses the same estimate.
+8. **Estimates mixed into measured fields.** *(v2: M2.1; v1 unchanged.)* When
+   an event has no in-band GPU counter reading, v1 attribution integrates
+   sampled power into `gpu_energy_j`, and that value enters
+   `measured_energy_j`. It is distinguished only by
+   `gpu_energy_source = "power_integration"`, while the trajectory layer
+   refuses the same estimate.
 
 **Recorder limitations**
 
-9. **Process-global recorder state.** The step and iteration counters and the
-   run context are module globals, so concurrent tasks (threads or asyncio)
-   interleave them. Forked children inherit the open sink.
-10. **No span hierarchy.** There are no span or parent ids. Nested spans each
-    record the full counter delta, so summing them double-counts. Overlap is
-    detected, not resolved.
+9. **Process-global recorder state.** *(v2: M2.4; v1 unchanged.)* The step
+   and iteration counters and the run context are module globals, so
+   concurrent tasks (threads or asyncio) interleave them. Forked children
+   inherit the open sink.
+10. **No span hierarchy.** *(v2: M2.3; v1 unchanged.)* There are no span or
+    parent ids. Nested spans each record the full counter delta, so summing
+    them double-counts. Overlap is detected, not resolved.
 11. **Cancellation status.** *(Fixed in M1.3.)* `span()` recorded
     `KeyboardInterrupt` and `asyncio.CancelledError` as `error`, not
     `cancelled`.
-12. **Wall clock only.** Events and samples use `time.time()`. Backward steps
-    are flagged, never repaired, and no monotonic timestamp is recorded.
+12. **Wall clock only.** *(v2 spans also record the monotonic clock.)* Events
+    and samples use `time.time()`. Backward steps are flagged, never
+    repaired. The sampler still writes wall-clock time only, so joining spans
+    to `power.csv` still depends on it.
 13. **Import side effect.** *(Fixed in M1.4.)* Importing
     `agent_energy_profiler.sampling` initialised NVML and scanned RAPL zones.
 14. **Scaling.** *(Fixed in M1.5.)* Attribution was O(windows × samples).
@@ -335,6 +342,198 @@ Run on 2026-10-15, before the M1 commit:
 - The research repository was not modified: HEAD `08bbc96`, clean working
   tree, index unchanged.
 
+## Milestone 2: schema v2 and structured tracing
+
+Scope: an additive schema v2 with explicit energy provenance, resolution
+awareness, nested spans, an explicit `Session` API, and NVML counter validity.
+Schema v1 is untouched: its writer (`events.py`, `profiler.py`), its
+attribution (`attribution.py`), `trajectory`, `aggregate` and `visualize`
+produce byte-identical output, which the golden fixtures and the frozen runs
+confirm. Field definitions were written first, in
+[SCHEMA_V2.md](SCHEMA_V2.md), and the code follows them.
+
+New modules: `measurement.py` (measurement model, `Resolution`, GPU readers),
+`schema_v2.py` (validator, v1 → v2 reader), `session.py` (`Session`),
+`accounting.py` (inclusive/exclusive), `attribution_v2.py`
+(`aep-attribute-v2`), and `sampling.Sampler`. Version 0.2.0.
+
+### M2.1 Energy provenance
+
+Every domain value is an object with `energy_j`, `status`
+(`measured`/`unavailable`/`invalid`), `reason`, `source`, `method`
+(`in_band_counter_delta` or `sampled_counter_interpolated`), `scope`
+(always `device`), `below_resolution`, `update_intervals` and the unmodified
+`raw` readings. `energy_j` is non-null only when `measured`. Integrated sampled
+power appears only in `estimates.gpu` and never enters `total`. Each
+`session_start` record carries the profiler version and the measurement
+configuration (GPU reader and devices, resolution and how it was established,
+sampler settings, energy scope).
+
+### M2.2 Resolution awareness
+
+`Resolution` records the GPU counter's median update interval and its basis:
+`unknown`, `configured` (a source description is mandatory),
+`hardware_report` (from `aep-validate --json`), or `probed` (measured at
+session start with `validation.probe_nvml_resolution`). A measured value
+shorter than the interval keeps its value and gets `below_resolution: true`;
+with no characterisation the flag is `null`, never `false`. The ratio
+`update_intervals` is recorded because the median interval is not a hard
+floor. RAPL resolution is recorded as unknown: it has never been measured.
+
+*Note on the interval.* The M2 brief cites ~100.6 ms for this machine. The
+spec and validation runs recorded at extraction give a median of 106.1–107.1
+ms (RTX 4090, six runs). The code hardcodes neither; the value comes in with
+its provenance, and reconciling the two figures is an open measurement task.
+
+### M2.3 Nested spans and accounting
+
+Spans carry `trace_id`, `span_id` and `parent_span_id`. Parents come from
+contextvars, so sync and async nesting both work and concurrent asyncio tasks
+become overlapping siblings. `accounting.annotate` adds depth, children,
+`concurrent_spans` (overlapping spans that are neither ancestors nor
+descendants, counted with sorted-endpoint bisection), `attribution`
+(`sole`/`shared`), inclusive and exclusive duration, and exclusive energy per
+domain.
+
+Exclusive energy = inclusive − Σ direct children, only for a `sole` span with
+sequential, contained, measured children. For the in-band GPU counter it is
+computed from the raw integer mJ readings, so it is exact and cannot be
+negative while reads are ordered (a parent's reads bracket its children's on
+the same monotonic register). For interpolated float domains, a negative
+result within the floating-point round-off bound of the subtraction is 0;
+beyond it the value is `invalid`. Summary totals add root spans only, and
+only when roots do not overlap; otherwise the total is null and the
+independent whole-window counter reading stands alone. Per-label rollups add
+exclusive energy and count the spans left out.
+
+Concurrent work is never split: overlapping spans are `shared` and keep their
+inclusive (device-window) energy with that label.
+
+### M2.4 Session and concurrency
+
+`Session` is an explicit object: no global default session, one file per
+session (exclusive create unless `overwrite=True`), a lock per session for
+writes, contextvars for the current span, `with`/`async with` and a
+`trace(label)` decorator for sync and async functions (the label is
+mandatory; function names are never used). `Session` starts and stops an
+optional `Sampler` subprocess so the timeline brackets every span, and closes
+cleanly when the body raises.
+
+Supported: threads (separate stacks; explicit `parent=` to link across a
+thread), asyncio (task-local context), several sessions in one process (their
+spans are marked `other_sessions_active` when they overlap, because device
+energy cannot be separated). Not supported: attribution across processes. A
+forked child refuses to write through an inherited session, and nothing
+separates device energy between processes.
+
+The v1 functional API is preserved unchanged as the compatibility layer, and
+`SpanHandle` accepts v1-style `s["input_tokens"] = n`, so moving a call site
+from `profiler.span` to `session.span` needs no body changes. A v1 file can be
+read and attributed as v2 (`schema_v2.read_records`, `aep-attribute-v2`).
+
+### M2.5 NVML counter validity
+
+*Finding.* NVML's total-energy register is 64-bit mJ and does not wrap in
+practice, so a decrease means a reset, driver reload or device change. v1
+handles this inconsistently: `events.record` silently nulls an in-band
+decrease, while `attribution.counter_delta` differences the sampled timeline
+blindly and can return a negative or understated window energy. That v1
+behaviour is unchanged and pinned by a test.
+
+*v2.* In-band: any device whose end reading is below its start makes the
+domain `invalid` (`counter_decrease`); a failed read is `unavailable`
+(`read_failed`); a changed device count is `devices_changed`; raw readings
+are kept in every case. Timeline: the sampled GPU counter goes through the
+same segment logic as RAPL (M1.2) with no wrap range, so a window spanning a
+decrease is `invalid` (`counter_discontinuity`). `power.csv` is never
+modified.
+
+### What changes for an existing v1 artifact read as v2
+
+Demonstrated on the synthetic golden case (`tests/test_attribution_v2.py`):
+every CPU-package, DRAM, core and in-band GPU value equals v1's exactly. The
+3 events v1 attributed by power integration keep that value, now in
+`estimates.gpu`; their `energy.gpu` and `total` become null, and `total`
+lists `gpu` as missing. That is correct under the v2 definitions: the value
+is an estimate, so it may not appear as measured energy. v1 output for the
+same input is unchanged.
+
+### Regression coverage (M2)
+
+| File | Tests | Covers |
+|---|---|---|
+| `test_measurement_model.py` | 18 | short/long spans, measured zero, missing reads, unknown resolution, resolution provenance and reports, in-band decrease, multi-device, device changes |
+| `test_schema_v2.py` | 13 | validator, every golden v1 event upgrades to a valid v2 span, estimates moved out, context preserved, mixed files, torn lines, future versions rejected |
+| `test_session.py` | 29 | lifecycle, header/footer, refusal to share a file, labels required, sync and async nesting, siblings, exceptions, `KeyboardInterrupt`, task cancellation, explicit status, threads, two sessions, fork guard, GPU disabled/absent/failing/reset, sampler lifecycle with a fake NVML, real NVML (opt-in) |
+| `test_accounting.py` | 15 | exclusive energy, exact partition of a root, measured zero, overlapping children, unmeasured or outside children, negative exclusive, other sessions, orphans, float round-off, root-only totals, concurrent roots, resolution counts |
+| `test_attribution_v2.py` | 10 | parity with the v1 golden output, estimate separation, end to end from a Session, timeline GPU counter reset, coverage refusal and opt-in, no timeline, reason codes |
+
+`test_import_side_effects.py` now also imports the five new modules and checks
+they touch no hardware.
+
+### Performance (this machine, WSL2, Python 3.12.3)
+
+| Measurement | Result |
+|---|---|
+| Empty-span overhead, v1 recorder disabled | 2.1 µs |
+| Empty-span overhead, v2 Session, no GPU / in-memory counter | 16.1 / 16.4 µs |
+| Empty-span overhead, v1 with NVML / v2 with NVML | 2,475 / 2,535 µs |
+| Recording 230,000 nested v2 spans (in-memory counter, incl. file writes) | 3.8 s (16.7 µs/span) |
+| v2 attribution: 230,000 nested spans + RAPL timeline | 21.6 s |
+| v2 attribution: synthetic 230,000 v1 events (2 GPUs + RAPL) | 26.3 s (v1 path: 12.6 s) |
+| v2 attribution: ToG frozen run, 230,042 events, read as v1 | 22.2 s, peak RSS 2.2 GB |
+
+On this WSL2 host one NVML energy read takes ~1.2 ms, so with a GPU the
+per-span overhead (two reads) is dominated by NVML for v1 and v2 alike. That
+is a property of the host's NVML path, not of the recorder; it should be
+re-measured on bare metal. `Session` reads the counter before taking the
+start timestamps and after taking the end timestamps, so `duration_s` covers
+the work only, while the counter window also includes part of each read call.
+`below_resolution` is therefore judged on the shorter interval, which errs
+towards flagging. (v1's `mark()` takes the time before the read at both ends.)
+`tools/benchmark_overhead.py` and `tools/benchmark_attribution.py --v2`
+reproduce these figures. v2 attribution has no quadratic term; its time is
+spread over JSON I/O (~7 s), accounting (~11 s) and window lookups (~4.5 s).
+
+### Validation (M2)
+
+- Baseline before changes: `fd5e30f`, 333 passed, 8 skipped.
+- Full suite after M2: 417 passed, 9 skipped (8 need frozen data, 1 is the
+  opt-in real-NVML test, which passes when enabled on this machine).
+- With `AEP_FROZEN_RUNS_DIR`: 418 passed, 8 skipped; the three frozen runs
+  re-attribute through v1 exactly as before.
+- Golden fixtures: all four byte-identical through v1; none regenerated.
+- Wheel 0.2.0 in a fresh venv with no `pynvml` (the GPU-absent path): 331
+  passed. Two failures, both unrelated to the package: the repository-path
+  check, which by design fails outside `src/`, and a pre-existing unit test
+  that needs pandas, which the clean venv does not have. `aep-attribute-v2` is
+  installed as a console script.
+- The research repository was only read (frozen runs), never written.
+
+### Known limitations and open research questions after M2
+
+- **Device scope only.** Every value is whole-device energy. `scope:
+  "process"` is reserved and never emitted; nothing here measures
+  per-process energy.
+- **Shared energy is reported, not split.** Concurrent spans keep inclusive
+  device-window energy labelled `shared`. Whether any allocation rule (time
+  share, utilisation-weighted) is defensible for agent workloads is an open
+  question.
+- **Resolution is a median.** `below_resolution` uses the median update
+  interval; the real interval jitters, and edge quantisation affects longer
+  spans too. The ~100.6 ms vs ~106 ms discrepancy is unreconciled.
+- **RAPL** is still unmeasured on real hardware: no resolution, no wrap
+  behaviour, no update cadence. All CPU/DRAM handling is synthetic-tested only.
+- **Asynchronous GPU work.** In-band reads bound the request, not the kernels
+  (spec §6, §14).
+- **NVML overhead** on WSL2 is ~1.2 ms per read and perturbs short spans.
+- **Cross-session detection is in-process only.** Another process using the
+  GPU at the same time is invisible to `other_sessions_active`.
+- **v1 tools do not read v2.** `trajectory`, `aggregate` and `visualize` are
+  v1-only.
+- **Accounting assumes one clock per file.** Spans are compared on the
+  monotonic clock of one process; upgraded v1 events use the wall clock.
+
 ## Remaining references to the research repository
 
 The research repository is not a dependency: no code imports it, no test
@@ -362,3 +561,4 @@ schema v1 and generic in role. Renaming them is a schema-v2 decision.
 |---|---|---|
 | 0.1.0 | Initial extraction; no behaviour change | identical |
 | 0.1.0 + M1 (version not bumped) | Partial multi-device sums become `null` (M1.1). RAPL unwrapped per counter from `max_energy_range_uj` via the new `<power.csv>.meta.json` sidecar; unresolvable decreases and negative differences become `null`; `RAPL_MAX` removed (M1.2). Interrupted spans recorded `cancelled` (M1.3). No hardware access at import; `sampling.init()`, `nvml.shutdown()` (M1.4). Columns filtered once per attribution call (M1.5). | identical: all four fixtures byte for byte, and the three frozen runs |
+| 0.2.0 (M2) | Additive schema v2: `Session`, `measurement`, `schema_v2`, `accounting`, `attribution_v2` (`aep-attribute-v2`), `sampling.Sampler`, v1 → v2 reader. `attribution.counter_window` factored out of `rapl_delta_prepared` (same arithmetic). No v1 behaviour change. | identical: all four fixtures byte for byte, and the three frozen runs |

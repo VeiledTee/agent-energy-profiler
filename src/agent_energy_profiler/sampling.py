@@ -105,6 +105,113 @@ def warn_about_gaps():
 		      " - GPU-only logging", file=sys.stderr)
 
 
+class Sampler:
+	"""Explicit lifecycle for the sampler, run as a separate process.
+
+	A subprocess rather than a thread: the sampler then never competes for the
+	measured program's GIL, and it is the same tested code path as
+	`aep-sample`. start() returns once the first sample row is on disk, so a
+	span opened afterwards lies inside the timeline. stop() waits for one
+	sample stamped after the stop request (so the last span is covered too),
+	then sends SIGTERM, which the sampler handles by finishing cleanly.
+
+	Its stderr (hardware warnings) goes to <power_file>.sampler.log.
+	"""
+
+	def __init__(self, power_file, hz=10.0, python=None, env=None,
+	             startup_timeout_s=15.0, stop_timeout_s=10.0):
+		if not hz > 0:
+			raise ValueError("hz must be positive")
+		self.power_file = power_file
+		self.hz = float(hz)
+		self.python = python or sys.executable
+		self.env = env
+		self.startup_timeout_s = startup_timeout_s
+		self.stop_timeout_s = stop_timeout_s
+		self._proc = None
+		self._log = None
+		self.exit_code = None
+
+	def describe(self):
+		return {"power_file": self.power_file, "hz": self.hz,
+		        "meta_file": power_meta_path(self.power_file),
+		        "process": "subprocess"}
+
+	@property
+	def running(self):
+		return self._proc is not None and self._proc.poll() is None
+
+	def _last_timestamp(self):
+		"""Timestamp of the last complete data row, or None."""
+		try:
+			with open(self.power_file, "rb") as f:
+				data = f.read()
+		except OSError:
+			return None
+		lines = data.split(b"\n")
+		# a complete row ends with a newline, so it is never the last element
+		for line in reversed(lines[1:-1]):
+			try:
+				return float(line.split(b",", 1)[0])
+			except ValueError:
+				continue
+		return None
+
+	def _wait_for(self, predicate, timeout):
+		deadline = time.monotonic() + timeout
+		while time.monotonic() < deadline:
+			if predicate():
+				return True
+			if self._proc.poll() is not None:
+				return predicate()
+			time.sleep(0.01)
+		return predicate()
+
+	def start(self):
+		import subprocess
+		if self._proc is not None:
+			raise RuntimeError("sampler already started")
+		self._log = open(self.power_file + ".sampler.log", "w")
+		self._proc = subprocess.Popen(
+			[self.python, "-m", "agent_energy_profiler.sampling",
+			 "--out", self.power_file, "--hz", repr(self.hz)],
+			stdout=self._log, stderr=self._log, env=self.env)
+		if not self._wait_for(lambda: self._last_timestamp() is not None,
+		                      self.startup_timeout_s):
+			self.stop()
+			raise RuntimeError(f"sampler produced no samples; see "
+			                   f"{self.power_file}.sampler.log")
+		return self
+
+	def stop(self):
+		"""Stop sampling; returns the sampler's exit code. Safe to call twice."""
+		import subprocess
+		if self._proc is None:
+			return self.exit_code
+		if self._proc.poll() is None:
+			requested = time.time()
+			self._wait_for(lambda: (self._last_timestamp() or 0) > requested,
+			               self.stop_timeout_s)
+			self._proc.terminate()
+			try:
+				self._proc.wait(timeout=self.stop_timeout_s)
+			except subprocess.TimeoutExpired:
+				self._proc.kill()
+				self._proc.wait()
+		self.exit_code = self._proc.returncode
+		if self._log is not None:
+			self._log.close()
+			self._log = None
+		return self.exit_code
+
+	def __enter__(self):
+		return self.start()
+
+	def __exit__(self, exc_type, exc, tb):
+		self.stop()
+		return False
+
+
 def main():
 	ap = argparse.ArgumentParser()
 	ap.add_argument("--out", required=True)

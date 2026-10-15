@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-energy-profiler"
-version = "0.1.0"
+version = "0.2.0"
 description = "Hardware-grounded, operation-level energy profiling for agentic systems"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -28,6 +28,7 @@ dev = ["pytest>=8"]
 [project.scripts]
 aep-sample = "agent_energy_profiler.sampling:main"
 aep-attribute = "agent_energy_profiler.attribution:main"
+aep-attribute-v2 = "agent_energy_profiler.attribution_v2:main"
 aep-validate = "agent_energy_profiler.validation:main"
 aep-aggregate = "agent_energy_profiler.aggregate:main"
 aep-visualize = "agent_energy_profiler.visualize:main"

@@ -328,9 +328,26 @@ def prepare_rapl(ts, uj, max_range=None):
 
 def rapl_delta_prepared(series, t0, t1):
 	"""rapl_delta over a series from prepare_rapl()."""
-	tt, vals, seg = series
-	if len(tt) < 2 or t1 <= t0:
+	d, _ = counter_window(series, t0, t1)
+	if d is None:
 		return None
+	return d / 1e6  # uJ -> J
+
+
+def counter_window(series, t0, t1):
+	"""(difference in the counter's native unit, None) or (None, reason).
+
+	The core of rapl_delta_prepared, with the reason a window is unusable:
+	insufficient_samples, clock_anomaly (impossible window, or a negative
+	difference that only a wall-clock step can produce) or
+	counter_discontinuity (an unresolved decrease inside the window). Schema
+	v2 reports the reason; v1 only ever saw None.
+	"""
+	tt, vals, seg = series
+	if len(tt) < 2:
+		return None, "insufficient_samples"
+	if t1 <= t0:
+		return None, "clock_anomaly"
 
 	def bracket(t):
 		i = bisect.bisect_left(tt, t)
@@ -360,14 +377,14 @@ def rapl_delta_prepared(series, t0, t1):
 	# Segments only grow with sample index, so equal segments at the lowest
 	# and highest sample used mean no unresolved decrease lies in between.
 	if seg[min(a0, a1)] != seg[max(b0, b1)]:
-		return None
+		return None, "counter_discontinuity"
 	d = value_at(a1, b1, t1) - value_at(a0, b0, t0)
 	if d < 0:
 		# An unwrapped counter does not run backwards. A negative difference
 		# can only come from a wall-clock step in the timeline, so the window
 		# lookup is unreliable; the old code added 2**32 uJ here.
-		return None
-	return d / 1e6  # uJ -> J
+		return None, "clock_anomaly"
+	return d, None
 
 
 def counter_delta(ts, values, t0, t1, scale):
