@@ -50,8 +50,9 @@ def _argv(argv):
 
 def _resolution(args):
 	from .measurement import Resolution
-	if getattr(args, "resolution_report", ""):
-		return Resolution.from_hardware_report(args.resolution_report)
+	report = getattr(args, "resolution_report", "") or getattr(args, "hardware_report", "")
+	if report:
+		return Resolution.from_hardware_report(report)
 	if getattr(args, "probe_resolution", False):
 		print("aep: probing the GPU counter update interval (~5 s)...", file=sys.stderr)
 		return Resolution.probe()
@@ -108,6 +109,17 @@ def cmd_run(args, rest):
 			return 2
 
 	resolution = _resolution(args)
+	disturbance = (m.CounterDisturbance.from_hardware_report(args.hardware_report)
+	               if args.hardware_report else m.CounterDisturbance.unknown())
+	mode, mode_reason = m.resolve_mode(args.mode, disturbance)
+	counter_hz = (args.counter_hz if args.counter_hz is not None
+	              else m.MODES[mode]["timeline_counter_hz"])
+	if args.no_sampler:
+		timeline = None
+	else:
+		from .sampling import timeline_meta
+		timeline = timeline_meta(args.power_hz, counter_hz)
+	print(f"aep run: measurement mode {mode} ({mode_reason})", file=sys.stderr)
 	attributes = dict(kv.split("=", 1) for kv in args.attr)
 	env = dict(os.environ)
 	env.update({
@@ -115,6 +127,10 @@ def cmd_run(args, rest):
 		"AEP_RESOLUTION": json.dumps(resolution.to_dict()),
 		"AEP_GPU": "off" if args.gpu == "off" else "auto",
 		"AEP_RUN_ATTRIBUTES": json.dumps(attributes),
+		"AEP_MEASUREMENT": json.dumps({"mode": mode, "requested_mode": args.mode,
+		                               "mode_reason": mode_reason,
+		                               "disturbance": disturbance.to_dict(),
+		                               "timeline": timeline}),
 	})
 
 	reader = None
@@ -125,7 +141,8 @@ def cmd_run(args, rest):
 				reader = candidate
 		except Exception:
 			reader = None
-	sampler = None if args.no_sampler else Sampler(power_file, hz=args.hz)
+	sampler = (None if args.no_sampler
+	           else Sampler(power_file, hz=args.power_hz, counter_hz=counter_hz))
 
 	if sampler is not None:
 		sampler.start()
@@ -143,13 +160,16 @@ def cmd_run(args, rest):
 	duration = end_mono - start_mono
 	gpu = (m.gpu_in_band(gpu_start, gpu_end, duration, resolution) if reader is not None
 	       else m.unavailable_gpu("disabled" if args.gpu == "off" else "no_counter"))
-	window = None
+	window = run_counter = None
 	if sampler is not None:
-		timeline = attribution_v2.Timeline(power_file)
-		window = attribution_v2._window_from_bounds(start_unix, end_unix, timeline, resolution)
+		tl = attribution_v2.Timeline(power_file)
+		window = attribution_v2._window_from_bounds(start_unix, end_unix, tl, resolution)
+		if tl.timeline_meta is not None:
+			run_counter = tl.run_counter(start_unix, end_unix)
 	instrumented = os.path.exists(spans_file)
 	run = {
-		"aep_run_version": 1,
+		"aep_run_version": 2,
+		"measurement": m.measurement_config(mode, args.mode, mode_reason, disturbance, timeline),
 		"profiler_version": __version__,
 		"command": command,
 		"exit_code": proc.returncode,
@@ -159,6 +179,7 @@ def cmd_run(args, rest):
 		"whole_program": {
 			"gpu_in_band": gpu,
 			"sampler_window": window,
+			"sampler_run_counter": run_counter,
 			"note": "device-level energy over the program's lifetime, including "
 			        "interpreter start-up and anything else running on the devices",
 		},
@@ -174,6 +195,11 @@ def cmd_run(args, rest):
 	print(f"\naep run: exit code {proc.returncode}, {duration:.2f} s -> {out_dir}")
 	print(f"  whole program, GPU (in-band counter): "
 	      f"{_fmt_domain(gpu)}")
+	if run_counter:
+		span = (f", {run_counter['duration_s']:.2f} s" if run_counter.get("duration_s")
+		        is not None else "")
+		print(f"  sampler run counter, GPU ({run_counter['n_readings']} readings{span}): "
+		      f"{_fmt_domain(run_counter)}")
 	if window:
 		for d, v in window["domains"].items():
 			print(f"  whole program, {d} (sampled counter): {_fmt_domain(v)}")
@@ -337,12 +363,25 @@ def build_parser():
 	                   "measured; per-operation energy only for spans the program records "
 	                   "with Session.from_env().")
 	p.add_argument("--out-dir", default="", help="default: aep-runs/<timestamp>")
-	p.add_argument("--hz", type=float, default=10.0, help="sampler rate (default 10)")
+	p.add_argument("--mode", choices=("auto", "direct", "sampled", "hybrid"), default="auto",
+	               help="measurement mode (default auto: per-span GPU counter reads only "
+	                    "if a disturbance test from --hardware-report found no effect; "
+	                    "otherwise sampled). See docs/MEASUREMENT_MODES.md")
+	p.add_argument("--hardware-report", default="",
+	               help="`aep validate --counter-disturbance --json` report: the GPU "
+	                    "counter interval and the counter-disturbance verdict")
+	p.add_argument("--power-hz", "--hz", dest="power_hz", type=float, default=10.0,
+	               help="sampler row rate: averaged power (and RAPL) read on every row "
+	                    "(default 10)")
+	p.add_argument("--counter-hz", type=float, default=None,
+	               help="sampler GPU energy-counter read rate; default from the mode "
+	                    "(0 = first and final row only; hybrid: 1)")
 	p.add_argument("--no-sampler", action="store_true",
 	               help="no CPU/DRAM timeline; GPU from in-band reads only")
 	p.add_argument("--gpu", choices=("auto", "off"), default="auto")
 	p.add_argument("--resolution-report", default="",
-	               help="aep validate --json report giving the GPU counter interval")
+	               help="aep validate --json report giving the GPU counter interval "
+	                    "(--hardware-report also provides it)")
 	p.add_argument("--probe-resolution", action="store_true",
 	               help="measure the GPU counter interval before running (~5 s)")
 	p.add_argument("--attr", action="append", default=[], metavar="KEY=VALUE",

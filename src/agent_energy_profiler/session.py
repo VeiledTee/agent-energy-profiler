@@ -177,16 +177,31 @@ class Session:
 	            session so the hardware timeline brackets every span
 	overwrite   by default an existing file is an error: two sessions must
 	            never share one file
+	mode        measurement mode (measurement.MODES): "direct" (the default,
+	            and the behaviour of every session before Milestone 5) reads
+	            the GPU counter at each span's boundaries; "sampled" and
+	            "hybrid" never read it per span, leaving GPU span energy to
+	            estimates; "auto" picks from `disturbance` (resolve_mode)
+	disturbance measurement.CounterDisturbance: what is known about counter
+	            disturbance on this host. Recorded in the header; UNKNOWN if
+	            omitted, and never assumed to mean "not disturbed"
+	timeline    description of a hardware timeline run outside this session
+	            (as `aep run` does), recorded in the header
 	"""
 
 	def __init__(self, path, *, attributes=None, gpu="auto", resolution=None,
-	             sampler=None, overwrite=False):
+	             sampler=None, overwrite=False, mode=m.MODE_DIRECT, disturbance=None,
+	             timeline=None):
 		self.path = path
 		self.session_id = secrets.token_hex(16)
 		self.attributes = dict(attributes or {})
 		self.resolution = resolution or m.Resolution.unknown()
 		if not isinstance(self.resolution, m.Resolution):
 			raise TypeError("resolution must be a measurement.Resolution")
+		self.disturbance = disturbance or m.CounterDisturbance.unknown()
+		self.requested_mode = mode
+		self.mode, self.mode_reason = m.resolve_mode(mode, self.disturbance)
+		self._timeline = timeline
 		self.sampler = sampler
 		self._overwrite = overwrite
 		self._gpu_mode = gpu
@@ -207,6 +222,8 @@ class Session:
 	ENV_RESOLUTION = "AEP_RESOLUTION"
 	ENV_GPU = "AEP_GPU"
 	ENV_ATTRIBUTES = "AEP_RUN_ATTRIBUTES"
+	#: JSON {"mode", "disturbance", "timeline"} set by `aep run` (Milestone 5)
+	ENV_MEASUREMENT = "AEP_MEASUREMENT"
 
 	@classmethod
 	def from_env(cls, default_path=None, *, attributes=None, **kwargs):
@@ -226,13 +243,24 @@ class Session:
 		if "resolution" not in kwargs and os.environ.get(cls.ENV_RESOLUTION):
 			kwargs["resolution"] = m.Resolution.from_dict(
 				json.loads(os.environ[cls.ENV_RESOLUTION]))
+		meas = None
+		if os.environ.get(cls.ENV_MEASUREMENT):
+			meas = json.loads(os.environ[cls.ENV_MEASUREMENT])
+			kwargs.setdefault("mode", meas.get("mode", m.MODE_DIRECT))
+			kwargs.setdefault("disturbance", m.CounterDisturbance.from_dict(meas.get("disturbance")))
+			kwargs.setdefault("timeline", meas.get("timeline"))
 		if "gpu" not in kwargs and os.environ.get(cls.ENV_GPU):
 			kwargs["gpu"] = False if os.environ[cls.ENV_GPU] == "off" else "auto"
 		merged = {}
 		if os.environ.get(cls.ENV_ATTRIBUTES):
 			merged.update(json.loads(os.environ[cls.ENV_ATTRIBUTES]))
 		merged.update(attributes or {})
-		return cls(path, attributes=merged, **kwargs)
+		session = cls(path, attributes=merged, **kwargs)
+		if meas and session.mode == meas.get("mode"):
+			# keep how `aep run` chose the mode (e.g. "auto" and why)
+			session.requested_mode = meas.get("requested_mode", session.requested_mode)
+			session.mode_reason = meas.get("mode_reason", session.mode_reason)
+		return session
 
 	# -- lifecycle --------------------------------------------------------
 
@@ -374,8 +402,13 @@ class Session:
 				pass
 		self._gpu_reader_name = getattr(reader, "name", "custom")
 
+	@property
+	def span_counter_reads(self):
+		"""Whether this session reads the GPU counter at span boundaries."""
+		return m.MODES[self.mode]["span_counter_reads"]
+
 	def _read_gpu(self):
-		if self._reader is None:
+		if self._reader is None or not self.span_counter_reads:
 			return None
 		try:
 			return self._reader.read()
@@ -398,9 +431,14 @@ class Session:
 			"counter": m.GPU_SOURCE,
 			"counter_unit": "mJ",
 		}
+		if isinstance(self._reader, m.NvmlReader):
+			from .hardware import nvml
+			gpu_cfg["driver_version"] = nvml.driver_version()
 		sampler_cfg = {"enabled": self.sampler is not None}
 		if self.sampler is not None:
 			sampler_cfg.update(self.sampler.describe())
+		timeline = ((self.sampler.describe().get("timeline") if self.sampler is not None
+		             else None) or self._timeline)
 		return {
 			"schema_version": schema_v2.SCHEMA_VERSION,
 			"record_type": schema_v2.SESSION_START,
@@ -416,6 +454,9 @@ class Session:
 				"gpu": gpu_cfg,
 				"resolution": self.resolution.to_dict(),
 				"sampler": sampler_cfg,
+				"measurement": m.measurement_config(
+					self.mode, self.requested_mode, self.mode_reason, self.disturbance,
+					timeline),
 			},
 			"attributes": self.attributes,
 		}
@@ -489,6 +530,8 @@ class Session:
 			duration = max(0.0, end_mono - span.start_mono)
 			if self._reader is None:
 				gpu = m.unavailable_gpu(self._gpu_reason or "no_counter")
+			elif not self.span_counter_reads:
+				gpu = m.unavailable_gpu("not_read_by_mode")
 			elif span.gpu_start is None or gpu_end is None:
 				gpu = m.unavailable_gpu("read_failed")
 			else:

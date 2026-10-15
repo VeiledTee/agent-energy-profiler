@@ -44,6 +44,19 @@ from . import schema_v2
 RAPL_SOURCE = "rapl"
 
 
+def _load_timeline_meta(path):
+	"""The sidecar's `timeline` block (sampler v2), or None."""
+	try:
+		with open(path) as f:
+			meta = json.load(f)
+	except (OSError, ValueError):
+		return None
+	if not isinstance(meta, dict) or meta.get("format") != v1.POWER_META_FORMAT:
+		return None
+	timeline = meta.get("timeline")
+	return timeline if isinstance(timeline, dict) else None
+
+
 def _group_window(group, t0, t1, scale):
 	"""(joules, None) for a complete device group, else (None, reason)."""
 	if not group:
@@ -78,7 +91,17 @@ class Timeline:
 
 	def __init__(self, power_path, meta_path=None):
 		self.ts, gpus, rapls, gpu_energy = v1.load_power(power_path)
-		ranges = v1.load_power_meta(meta_path or v1.power_meta_path(power_path))
+		meta_path = meta_path or v1.power_meta_path(power_path)
+		ranges = v1.load_power_meta(meta_path)
+		#: what the sampler declared it read (sidecar v2); None for timelines
+		#: written before Milestone 5, which read the counter on every row
+		self.timeline_meta = _load_timeline_meta(meta_path)
+		policy = (self.timeline_meta or {}).get("counter_policy", "every_row")
+		#: sparse: the counter was deliberately not read on every row. Window
+		#: values are then measured only between actual readings (run_counter),
+		#: never interpolated across long unread gaps.
+		self.sparse_counter = policy in ("boundaries", "every_n_rows")
+		self.gpu_energy_raw = list(gpu_energy.values())
 		self.n_rapl_columns_without_range = sum(1 for c in rapls if ranges.get(c) is None)
 		pkg, core, dram = v1.classify_rapl(rapls)
 		self.groups = {}
@@ -106,7 +129,84 @@ class Timeline:
 			d["diagnostic"] = True
 		return d
 
+	def counter_readings(self):
+		"""[(t, total_mj, segment)] on rows where every GPU's counter was read.
+
+		segment changes where any device's counter went down (reset, driver
+		reload): energy across a segment change is not defensible.
+		"""
+		if not self.gpu_energy_raw:
+			return []
+		rows = [i for i in range(len(self.ts))
+		        if all(col[i] is not None for col in self.gpu_energy_raw)]
+		seg, out, prev = 0, [], None
+		for i in rows:
+			values = [col[i] for col in self.gpu_energy_raw]
+			if prev is not None and any(v < p for v, p in zip(values, prev)):
+				seg += 1
+			out.append((self.ts[i], sum(values), seg))
+			prev = values
+		return out
+
+	def run_counter(self, span_t0=None, span_t1=None):
+		"""Measured GPU energy between the first and last counter readings.
+
+		The window is the readings' own: it is not stretched or shrunk to the
+		spans by interpolation. `brackets_all_spans` says whether it contains
+		every span; energy outside the spans (sampler start-up, idle tail) is
+		inside it.
+		"""
+		reads = self.counter_readings()
+		base = {"source": m.GPU_SOURCE, "method": "sampled_counter_readings",
+		        "scope": m.SCOPE_DEVICE, "n_readings": len(reads)}
+		if len(reads) < 2:
+			return dict(base, energy_j=None, status=m.UNAVAILABLE,
+			            reason="insufficient_samples" if self.gpu_energy_raw else "no_counter")
+		(t0, e0, s0), (t1, e1, s1) = reads[0], reads[-1]
+		out = dict(base, start_unix_s=t0, end_unix_s=t1, duration_s=t1 - t0,
+		           brackets_all_spans=(span_t0 is not None and span_t1 is not None
+		                               and t0 <= span_t0 and t1 >= span_t1))
+		if s0 != s1:
+			return dict(out, energy_j=None, status=m.INVALID, reason="counter_discontinuity")
+		return dict(out, energy_j=(e1 - e0) / 1000.0, status=m.MEASURED, reason=None)
+
+	def counter_intervals(self):
+		"""Counter vs integrated averaged power on each interval between readings.
+
+		Diagnostic only, never a correction: averaged power lags load changes
+		(docs/NVML_COUNTER_VALIDATION.md section 4), so short intervals around
+		load steps disagree for reasons that are not counter error.
+		"""
+		reads = self.counter_readings()
+		pairs = []
+		for (ta, ea, sa), (tb, eb, sb) in zip(reads, reads[1:]):
+			if sa != sb or tb <= ta:
+				continue
+			parts = [v1.integrate_prepared(s, ta, tb) for s in self.gpu_power]
+			est = sum(parts) if parts and all(p is not None for p in parts) else None
+			pairs.append((tb - ta, (eb - ea) / 1000.0, est))
+		usable = [(d, c, e) for d, c, e in pairs if e]
+		ratios = sorted(c / e for d, c, e in usable)
+
+		def q(p):
+			return ratios[min(len(ratios) - 1, int(p * (len(ratios) - 1) + 0.5))] if ratios else None
+		return {
+			"n_intervals": len(pairs),
+			"median_interval_s": sorted(d for d, _, _ in pairs)[len(pairs) // 2] if pairs else None,
+			"counter_j": sum(c for _, c, _ in pairs) if pairs else None,
+			"estimate_j_same_intervals": sum(e for _, _, e in usable) if usable else None,
+			"counter_over_estimate_median": q(0.5),
+			"counter_over_estimate_p10": q(0.1),
+			"counter_over_estimate_p90": q(0.9),
+			"note": "diagnostic: integrated averaged power vs the counter between consecutive "
+			        "counter readings; averaged power lags load changes",
+		}
+
 	def gpu_counter_domain(self, t0, t1, resolution, duration):
+		if self.sparse_counter:
+			# the counter was read too sparsely (by configuration) for an
+			# interpolated window value to be a measurement; see run_counter
+			return m.domain(None, m.UNAVAILABLE, "counter_not_sampled", m.GPU_SOURCE, m.SAMPLED)
 		names, group = self.gpu_counter
 		value, reason = _group_window(group, t0, t1, 1e3)
 		status = m.MEASURED if value is not None else _status_for(reason)
@@ -320,6 +420,14 @@ def main(argv=None):
 			"rapl_columns_without_range": timeline.n_rapl_columns_without_range,
 		},
 	})
+	# Milestone 5, only for timelines that declare what they read (sidecar
+	# v2), so earlier artifacts attribute exactly as before.
+	if timeline is not None and timeline.timeline_meta is not None:
+		summary["timeline"]["declared"] = timeline.timeline_meta
+		window = summary.get("window") or {}
+		summary["run_counter"] = timeline.run_counter(window.get("start_unix_s"),
+		                                              window.get("end_unix_s"))
+		summary["counter_intervals"] = timeline.counter_intervals()
 	with open(os.path.join(args.out_dir, "session_summary.json"), "w") as f:
 		json.dump(summary, f, indent=2)
 	print(f"{n_rows} spans attributed -> {args.out_dir}")

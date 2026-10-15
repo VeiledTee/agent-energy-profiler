@@ -7,8 +7,16 @@ import tempfile
 import time
 import unittest
 
+import pytest
+
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(os.path.dirname(HERE), "tools", "nvml_diagnostics"))
+TOOLS = os.path.join(os.path.dirname(HERE), "tools", "nvml_diagnostics")
+if not os.path.isdir(TOOLS):
+	# testing an installed wheel from a copy of tests/: the diagnostics are
+	# repository tools, not part of the package
+	pytest.skip("tools/nvml_diagnostics not present (installed-package test run)",
+	            allow_module_level=True)
+sys.path.insert(0, TOOLS)
 
 import analyze  # noqa: E402
 import experiment  # noqa: E402
@@ -136,10 +144,15 @@ FAKE_PYNVML = """
 import time
 _t0 = time.perf_counter()
 _reads = [0]
+_pstate_calls = [0]
 LOSS_MJ = {loss}
+FLICKER = {flicker}
 def nvmlInit(): pass
 def nvmlDeviceGetHandleByIndex(i): return i
-def nvmlDeviceGetPerformanceState(h): return 8
+def nvmlDeviceGetPerformanceState(h):
+    _pstate_calls[0] += 1
+    # the GPU changes state during the first pair only
+    return 5 if (FLICKER and _pstate_calls[0] == 2) else 8
 def nvmlDeviceGetTotalEnergyConsumption(h):
     _reads[0] += 1
     return int((time.perf_counter() - _t0) * 30_000) - _reads[0] * LOSS_MJ
@@ -160,11 +173,11 @@ class TestCounterDisturbanceCheck(unittest.TestCase):
 		r = v.counter_disturbance_verdict([(25.0, 28.0, False), (60.0, 28.0, True)])
 		self.assertEqual((r["verdict"], r["n_valid"]), (v.INCONCLUSIVE, 1))
 
-	def run_probe(self, loss):
+	def run_probe(self, loss, flicker=False):
 		import subprocess
 		with tempfile.TemporaryDirectory() as d:
 			with open(os.path.join(d, "pynvml.py"), "w") as f:
-				f.write(FAKE_PYNVML.format(loss=loss))
+				f.write(FAKE_PYNVML.format(loss=loss, flicker=flicker))
 			code = ("import json; from agent_energy_profiler import validation as v; "
 			        "print(json.dumps(v.probe_counter_disturbance(pairs=2, window_s=0.5, "
 			        "rest_s=0.0)))")
@@ -181,6 +194,12 @@ class TestCounterDisturbanceCheck(unittest.TestCase):
 	def test_probe_reports_no_effect_for_an_undisturbed_counter(self):
 		r = self.run_probe(loss=0)
 		self.assertEqual(r["verdict"], "NOT_DETECTED")
+
+	def test_probe_replaces_pairs_where_the_gpu_changed_state(self):
+		r = self.run_probe(loss=200, flicker=True)
+		self.assertEqual((r["n_pairs"], r["n_valid"]), (3, 2))
+		self.assertTrue(r["windows_w"][0]["pstate_changed"])
+		self.assertEqual(r["verdict"], "DISTURBED")
 
 
 if __name__ == "__main__":

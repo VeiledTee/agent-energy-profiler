@@ -19,17 +19,17 @@ own LLM calls, tool calls and checks the same way.
 
 ```bash
 python -m venv .venv
-.venv/bin/pip install agent-energy-profiler        # add [gpu] to read an NVIDIA GPU
+.venv/bin/pip install /path/to/agent-energy-profiler        # not on PyPI: a clone or wheel
 ```
 
 ## Run
 
 ```bash
-aep validate --json hw.json
-aep run --resolution-report hw.json --out-dir runs/agent -- \
+aep validate --counter-disturbance --json hw.json
+aep run --hardware-report hw.json --out-dir runs/agent -- \
     python examples/agent_workflow/agent.py
 # concurrent version: shows shared attribution
-aep run --resolution-report hw.json --out-dir runs/agent-par -- \
+aep run --hardware-report hw.json --out-dir runs/agent-par -- \
     python examples/agent_workflow/agent.py --parallel
 ```
 

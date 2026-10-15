@@ -7,15 +7,15 @@ serialise), each a span, all inside one `pipeline:run` span.
 
 ```bash
 python -m venv .venv
-.venv/bin/pip install agent-energy-profiler        # or: pip install -e /path/to/repo
-.venv/bin/pip install 'agent-energy-profiler[gpu]' # optional: read an NVIDIA GPU too
+.venv/bin/pip install /path/to/agent-energy-profiler        # not on PyPI: a clone or wheel
+.venv/bin/pip install '/path/to/agent-energy-profiler[gpu]' # a clone or wheel, with NVML bindings
 ```
 
 ## Run
 
 ```bash
-aep validate --json hw.json                        # once per machine
-aep run --resolution-report hw.json --out-dir runs/cpu -- \
+aep validate --counter-disturbance --json hw.json                        # once per machine
+aep run --hardware-report hw.json --out-dir runs/cpu -- \
     python examples/cpu_workflow/workflow.py
 ```
 

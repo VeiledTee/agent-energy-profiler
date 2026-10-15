@@ -52,13 +52,20 @@ def init():
 	return _RAPL
 
 
-def power_meta(rapl_paths):
-	"""Metadata sidecar content for a power log with these RAPL counters."""
-	return {
+def power_meta(rapl_paths, hz=None, counter_hz=None):
+	"""Metadata sidecar content for a power log with these RAPL counters.
+
+	Version 2 adds `timeline` (what was read and how often); version-1
+	readers ignore it.
+	"""
+	meta = {
 		"format": POWER_META_FORMAT,
-		"version": 1,
+		"version": 2,
 		"rapl_max_energy_range_uj": rapl.column_ranges(rapl_paths),
 	}
+	if hz is not None:
+		meta["timeline"] = timeline_meta(hz, counter_hz)
+	return meta
 
 
 def build_header():
@@ -77,14 +84,59 @@ def build_header():
 	        + rapl.column_names(zones))
 
 
-def sample_row(handles, rapl_paths):
-	"""One CSV row. An unreadable counter writes an empty cell, never a zero."""
+#: Counter policies (recorded in the sidecar as timeline.counter_policy):
+#:   every_row     read the cumulative energy counter on every row (the
+#:                 original behaviour, still the default of `aep sample`)
+#:   every_n_rows  read it on every n-th row and on the final row
+#:   boundaries    read it only on the first and the final row
+#: Power is read on every row in all policies. Milestone 4 found, on one
+#: WSL2 host, that each counter read lowers the counter's accumulation while
+#: averaged-power reads do not (docs/NVML_COUNTER_VALIDATION.md).
+EVERY_ROW = "every_row"
+EVERY_N_ROWS = "every_n_rows"
+BOUNDARIES = "boundaries"
+
+
+def counter_policy(hz, counter_hz):
+	"""(policy, n) for a row rate and a requested counter rate.
+
+	counter_hz None or >= hz: every row. 0: boundaries only. Otherwise every
+	n-th row with n = round(hz / counter_hz), so the effective rate is hz / n.
+	"""
+	if counter_hz is None or counter_hz >= hz:
+		return EVERY_ROW, 1
+	if counter_hz <= 0:
+		return BOUNDARIES, None
+	return EVERY_N_ROWS, max(1, round(hz / counter_hz))
+
+
+def timeline_meta(hz, counter_hz):
+	"""The sidecar's description of what was read, and how often."""
+	policy, n = counter_policy(hz, counter_hz)
+	return {
+		"power_hz": hz,
+		"power_api": "nvmlDeviceGetPowerUsage (driver-averaged board power)",
+		"counter_policy": policy,
+		"counter_every_n_rows": n,
+		"counter_hz_effective": (hz if policy == EVERY_ROW else
+		                         0.0 if policy == BOUNDARIES else hz / n),
+		"counter_api": "nvmlDeviceGetTotalEnergyConsumption",
+		"row_timestamp": "time.time() taken before the row's reads",
+	}
+
+
+def sample_row(handles, rapl_paths, read_counter=True):
+	"""One CSV row. An unreadable counter writes an empty cell, never a zero.
+
+	With read_counter False the energy cells are left empty: not read, which
+	every reader already treats as missing, never as zero.
+	"""
 	row = [f"{time.time():.3f}"]
 	for h in handles:
 		watts = nvml.device_power_w(h)
 		row.append(watts if watts is not None else "")
 	for h in handles:
-		energy = nvml.device_energy_mj(h)
+		energy = nvml.device_energy_mj(h) if read_counter else None
 		row.append(energy if energy is not None else "")
 	for path in rapl_paths:
 		value = rapl.read_zone(path)
@@ -119,11 +171,16 @@ class Sampler:
 	"""
 
 	def __init__(self, power_file, hz=10.0, python=None, env=None,
-	             startup_timeout_s=15.0, stop_timeout_s=10.0):
+	             startup_timeout_s=15.0, stop_timeout_s=10.0, counter_hz=None):
 		if not hz > 0:
 			raise ValueError("hz must be positive")
+		if counter_hz is not None and counter_hz < 0:
+			raise ValueError("counter_hz must be >= 0 (0 = boundaries only)")
 		self.power_file = power_file
 		self.hz = float(hz)
+		#: None: counter on every row (the original behaviour); 0: first and
+		#: final row only; otherwise roughly this rate (see counter_policy)
+		self.counter_hz = None if counter_hz is None else float(counter_hz)
 		self.python = python or sys.executable
 		self.env = env
 		self.startup_timeout_s = startup_timeout_s
@@ -133,9 +190,12 @@ class Sampler:
 		self.exit_code = None
 
 	def describe(self):
-		return {"power_file": self.power_file, "hz": self.hz,
-		        "meta_file": power_meta_path(self.power_file),
-		        "process": "subprocess"}
+		out = {"power_file": self.power_file, "hz": self.hz,
+		       "meta_file": power_meta_path(self.power_file),
+		       "process": "subprocess"}
+		if self.counter_hz is not None:
+			out["timeline"] = timeline_meta(self.hz, self.counter_hz)
+		return out
 
 	@property
 	def running(self):
@@ -172,10 +232,11 @@ class Sampler:
 		if self._proc is not None:
 			raise RuntimeError("sampler already started")
 		self._log = open(self.power_file + ".sampler.log", "w")
-		self._proc = subprocess.Popen(
-			[self.python, "-m", "agent_energy_profiler.sampling",
-			 "--out", self.power_file, "--hz", repr(self.hz)],
-			stdout=self._log, stderr=self._log, env=self.env)
+		cmd = [self.python, "-m", "agent_energy_profiler.sampling",
+		       "--out", self.power_file, "--hz", repr(self.hz)]
+		if self.counter_hz is not None:
+			cmd += ["--counter-hz", repr(self.counter_hz)]
+		self._proc = subprocess.Popen(cmd, stdout=self._log, stderr=self._log, env=self.env)
 		if not self._wait_for(lambda: self._last_timestamp() is not None,
 		                      self.startup_timeout_s):
 			self.stop()
@@ -215,9 +276,14 @@ class Sampler:
 def main():
 	ap = argparse.ArgumentParser()
 	ap.add_argument("--out", required=True)
-	ap.add_argument("--hz", type=float, default=10.0)
+	ap.add_argument("--hz", type=float, default=10.0,
+	                help="row rate: power (and RAPL) is read on every row")
+	ap.add_argument("--counter-hz", type=float, default=None,
+	                help="GPU energy-counter read rate; default: every row (the "
+	                     "original behaviour); 0: first and final row only")
 	args = ap.parse_args()
 
+	policy, every_n = counter_policy(args.hz, args.counter_hz)
 	period = 1.0 / args.hz
 	stop = {"flag": False}
 	signal.signal(signal.SIGINT, lambda *_: stop.update(flag=True))
@@ -229,15 +295,23 @@ def main():
 		warn_about_gaps()
 
 		with open(power_meta_path(args.out), "w") as f:
-			json.dump(power_meta(zones), f, indent=2, sort_keys=True)
+			json.dump(power_meta(zones, args.hz, args.counter_hz), f, indent=2, sort_keys=True)
 			f.write("\n")
 		with open(args.out, "w", newline="") as f:
 			w = csv.writer(f)
 			w.writerow(build_header())
+			i = 0
 			while not stop["flag"]:
-				w.writerow(sample_row(handles, zones))
+				read_counter = (policy == EVERY_ROW or i == 0
+				                or (policy == EVERY_N_ROWS and i % every_n == 0))
+				w.writerow(sample_row(handles, zones, read_counter))
 				f.flush()
+				i += 1
 				time.sleep(period)
+			if policy != EVERY_ROW:
+				# a final counter reading closes the measured run window
+				w.writerow(sample_row(handles, zones, True))
+				f.flush()
 	finally:
 		nvml.shutdown()
 	print(f"power log written: {args.out}")

@@ -425,10 +425,56 @@ def _warnings(acc, rep):
 	if acc.clock_anomalies:
 		_warn(w, "CLOCK_ANOMALY", f"{acc.clock_anomalies} spans saw the wall clock step "
 		      f"backwards; their window lookups are unreliable.")
+	meas = rep.get("measurement") or {}
+	verdict = (meas.get("counter_disturbance") or {}).get("verdict", "UNKNOWN")
+	timeline = meas.get("timeline_declared") or meas.get("timeline") or {}
+	dense_timeline = (timeline.get("counter_hz_effective") or 0) >= 2
+	frequent_reads = (not meas.get("recorded") or meas.get("span_counter_reads")
+	                  or dense_timeline)
+	if not meas.get("recorded"):
+		_warn(w, "MEASUREMENT_NOT_RECORDED", meas.get("note", "measurement mode not recorded"))
+	if frequent_reads and verdict in ("UNKNOWN", "INCONCLUSIVE"):
+		_warn(w, "COUNTER_DISTURBANCE_UNKNOWN", f"The GPU energy counter was read often "
+		      f"(per span and/or by the sampler) and counter disturbance on this host is "
+		      f"{verdict}. On at least one host, each read lowered the counter's reported "
+		      f"energy (docs/NVML_COUNTER_VALIDATION.md); measured GPU values may be biased "
+		      f"low. Test with `aep validate --counter-disturbance`.")
+	if frequent_reads and verdict == "DISTURBED":
+		_warn(w, "COUNTER_DISTURBED", "Counter disturbance was DETECTED on this host and the "
+		      "counter was read often during this run: measured GPU values are biased low "
+		      "by an amount that depends on the read rate. Prefer --mode sampled or hybrid.")
+	if meas.get("recorded") and not meas.get("span_counter_reads"):
+		_warn(w, "SPAN_ESTIMATES_ONLY", f"Mode {meas.get('mode')}: spans were not measured "
+		      f"with the GPU counter. Per-span GPU values are estimates (integrated averaged "
+		      f"power); the measured GPU figure is the run counter, which covers the whole "
+		      f"sampler window and cannot be split between spans.")
 	if rep["source"].get("attributed_on_the_fly"):
 		_warn(w, "NO_TIMELINE", "The input was not attributed; it was attributed without "
 		      "a hardware timeline, so only in-band GPU energy is available.")
 	return w
+
+
+def _measurement_section(schema, summary):
+	"""How the run was measured (Milestone 5 provenance), or what is unknown."""
+	header = (summary or {}).get("session") or {}
+	cfg = header.get("config") or {}
+	meas = cfg.get("measurement")
+	if schema == 1:
+		out = {"recorded": False, "model_version": 1,
+		       "note": "schema-v1 run: GPU counter read in-band at every event boundary; "
+		               "the sampler's counter rate and counter disturbance were not recorded"}
+	elif not meas:
+		out = {"recorded": False, "model_version": 1,
+		       "note": "session recorded before measurement modes: per-span GPU counter "
+		               "reads were on; the sampler's counter rate and counter disturbance "
+		               "were not recorded"}
+	else:
+		out = dict(meas, recorded=True)
+	declared = ((summary or {}).get("timeline") or {}).get("declared")
+	if declared:
+		out["timeline_declared"] = declared
+	out["driver_version"] = (cfg.get("gpu") or {}).get("driver_version")
+	return out
 
 
 def _metadata_v2(summary):
@@ -505,8 +551,11 @@ def build(path, resolution=None):
 	}
 	if schema == 2:
 		rep["run"].update(_metadata_v2(summary))
+	rep["measurement"] = _measurement_section(schema, summary)
 	rep["totals"] = _totals(acc)
 	rep["window"] = _window_section(schema, record_file, summary)
+	rep["run_counter"] = (summary or {}).get("run_counter")
+	rep["counter_intervals"] = (summary or {}).get("counter_intervals")
 	rep["operations"] = _operations(acc)
 	rep["hierarchy"] = _hierarchy(acc) if schema == 2 else []
 	rep["coverage"] = {d: {"states": dict(sorted(acc.coverage[d].items())),
@@ -601,6 +650,21 @@ def render_text(rep, top=20):
 		         f"({res['basis']}: {res.get('source')})")
 	else:
 		L.append("resolution   GPU counter update interval UNKNOWN (not characterised)")
+	meas = rep.get("measurement") or {}
+	if meas.get("recorded"):
+		tl = meas.get("timeline_declared") or meas.get("timeline") or {}
+		dist = meas.get("counter_disturbance") or {}
+		L.append(f"measurement  mode {meas.get('mode')} (requested {meas.get('requested_mode')}); "
+		         f"per-span GPU counter reads {'ON' if meas.get('span_counter_reads') else 'off'}")
+		if tl:
+			L.append(f"             sampler: power every row at {tl.get('power_hz')} Hz "
+			         f"({tl.get('power_api')}); GPU counter {tl.get('counter_policy')} "
+			         f"(~{tl.get('counter_hz_effective')} Hz)")
+		L.append(f"             counter disturbance {dist.get('verdict')} "
+		         f"(source: {dist.get('source') or 'none'})"
+		         + (f", driver {meas['driver_version']}" if meas.get("driver_version") else ""))
+	else:
+		L.append(f"measurement  not recorded: {meas.get('note')}")
 	L.append("")
 
 	t = rep["totals"]
@@ -634,6 +698,21 @@ def render_text(rep, top=20):
 		L.append(f"  {win['basis']}: " + ", ".join(parts))
 	else:
 		L.append(f"  n/a ({win.get('reason')})")
+	rc = rep.get("run_counter")
+	if rc:
+		L.append("RUN COUNTER MEASUREMENT (sampler's GPU counter, its own first to last reading)")
+		if rc.get("status") == "measured":
+			L.append(f"  gpu {rc['energy_j']:,.3f} J over {rc['duration_s']:.2f} s, "
+			         f"{rc['n_readings']} readings; brackets all spans: "
+			         f"{rc.get('brackets_all_spans')}")
+		else:
+			L.append(f"  n/a ({rc.get('status')}: {rc.get('reason')})")
+		ci = rep.get("counter_intervals") or {}
+		if ci.get("counter_over_estimate_median") is not None:
+			L.append(f"  (diagnostic: on {ci['n_intervals']} counter intervals, counter / "
+			         f"integrated power median {ci['counter_over_estimate_median']:.3f}, "
+			         f"p10-p90 {ci['counter_over_estimate_p10']:.3f}-"
+			         f"{ci['counter_over_estimate_p90']:.3f})")
 	L.append("")
 
 	ops = sorted(rep["operations"], key=lambda r: -(r["duration_total_s"] or 0))[:top]

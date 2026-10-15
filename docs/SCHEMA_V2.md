@@ -54,6 +54,7 @@ A v2 file (`spans.jsonl`) is JSON lines. Every record carries
 | `config.gpu` | object | `enabled`, `reader` (`"nvml"`, `"custom"`, `"disabled"`), `devices` (index and name of each counter read), `counter`, `counter_unit` |
 | `config.resolution` | object | see 2.4 |
 | `config.sampler` | object | `enabled`, `power_file`, `hz` |
+| `config.measurement` | object | measurement mode and its provenance (section 6). Absent in sessions written before Milestone 5 |
 | `attributes` | object | caller-supplied run context (run id, dataset, model, ...) |
 
 ### 2.2 `span`
@@ -120,6 +121,8 @@ device yields a valid difference; otherwise it is `unavailable` or `invalid`.
 | `clock_anomaly` | the window's wall-clock lookup is unreliable (negative difference after a backward clock step) |
 | `not_covered` | the span lies outside the sampler's timeline |
 | `devices_changed` | the set of devices differed between the start and end reading |
+| `not_read_by_mode` | the session's measurement mode does not read the counter per span (`sampled`, `hybrid`) |
+| `counter_not_sampled` | the hardware timeline declares a sparse counter policy, so this window has no counter readings close enough to measure it (the run counter is reported instead) |
 
 ### 2.6 `session_end` (last line, when the session is closed)
 
@@ -207,6 +210,44 @@ Two consequences worth knowing:
   10 Hz) is a second resolution limit that `below_resolution` does not
   include. Today such values exist for RAPL (flag always `null`) and for the
   session-window GPU reading, which is long.
+
+## 6. Measurement model version 2 (Milestone 5)
+
+Additive. Sessions and timelines written earlier have none of these fields
+and are read and attributed exactly as before.
+
+**Session header `config.measurement`:**
+
+| Field | Meaning |
+|---|---|
+| `model_version` | 2. Absent block = version 1: per-span counter reads, sampler counter rate unrecorded |
+| `mode` | `direct`, `sampled` or `hybrid` ([MEASUREMENT_MODES.md](MEASUREMENT_MODES.md)) |
+| `requested_mode` | what the caller asked for, e.g. `auto` |
+| `mode_reason` | why `mode` was chosen |
+| `span_counter_reads` | whether spans read the GPU counter at their boundaries |
+| `semantics` | text: what per-span and run GPU energy mean in this mode |
+| `timeline` | the sampler's declared reads (as in the sidecar below), or null |
+| `counter_disturbance` | `verdict` (`DISTURBED`, `NOT_DETECTED`, `INCONCLUSIVE`, `UNKNOWN`), `source`, `retained_median`, `read_hz`, `measured_at_unix_s`, `driver_version` |
+
+`config.gpu.driver_version` is added when NVML is read.
+
+**Sampler sidecar** (`<power.csv>.meta.json`, version 2) adds `timeline`:
+`power_hz`, `power_api`, `counter_policy` (`every_row`, `every_n_rows`,
+`boundaries`), `counter_every_n_rows`, `counter_hz_effective`,
+`counter_api`, `row_timestamp`. Rows on which the counter was not read have
+an empty counter cell. A sidecar without `timeline` means `every_row`.
+
+**Session summary**, only when the timeline declares a `timeline` block:
+
+| Field | Meaning |
+|---|---|
+| `timeline.declared` | the sidecar's `timeline` block |
+| `run_counter` | `{energy_j, status, reason, start_unix_s, end_unix_s, duration_s, n_readings, brackets_all_spans, source, method: "sampled_counter_readings", scope}`: the counter difference between the first and last readings on which every GPU was read. Its window is the readings' own |
+| `counter_intervals` | diagnostic comparison of counter energy and integrated averaged power between consecutive readings: `n_intervals`, `median_interval_s`, `counter_j`, `estimate_j_same_intervals`, `counter_over_estimate_median`, `_p10`, `_p90` |
+
+With a sparse policy (`every_n_rows`, `boundaries`), `window.domains.gpu` is
+`unavailable` with reason `counter_not_sampled`; with `every_row` it is
+computed as before.
 
 ## Reading v1 as v2
 

@@ -17,13 +17,20 @@ and a report.
 Before measuring on a new machine, characterise the GPU counter once:
 
 ```bash
-aep validate --json hw.json        # also prints what this host can measure
+aep validate --counter-disturbance --json hw.json        # also prints what this host can measure
 ```
 
-and pass `--resolution-report hw.json` to `aep run` so short spans can be
+and pass `--hardware-report hw.json` to `aep run` so short spans can be
 flagged as below the counter's resolution.
 
-**About the GPU numbers in these READMEs.** They were recorded on an RTX 4090
+**Measurement mode.** `aep run` defaults to `--mode auto`: with a hardware
+report whose disturbance test found no effect it reads the GPU counter per
+span (`direct`); otherwise (`sampled`) per-span GPU values are estimates and
+the run counter is the measurement. Force a mode with `--mode`. See
+[docs/MEASUREMENT_MODES.md](../docs/MEASUREMENT_MODES.md).
+
+**About the GPU numbers in these READMEs.** They predate measurement modes:
+spans read the counter per span and the sampler read it at 10 Hz. They were recorded on an RTX 4090
 under WSL2 with the 10 Hz sampler running. On that host, reading the NVML
 energy counter makes it under-report (~10–11% at the sampler's 10 Hz, more
 with frequent span reads; see docs/NVML_COUNTER_VALIDATION.md). Treat the GPU figures

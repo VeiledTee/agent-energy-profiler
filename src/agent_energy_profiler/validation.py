@@ -409,7 +409,8 @@ def counter_disturbance_verdict(pairs, threshold=0.95):
 	return result
 
 
-def probe_counter_disturbance(pairs=3, window_s=6.0, rest_s=2.0, read_hz=10.0):
+def probe_counter_disturbance(pairs=3, window_s=6.0, rest_s=2.0, read_hz=10.0,
+                              max_pairs=None):
 	"""Does reading the energy counter at `read_hz` lower what it reports?
 
 	Alternates two kinds of window on the same device, in pairs: one with no
@@ -419,7 +420,12 @@ def probe_counter_disturbance(pairs=3, window_s=6.0, rest_s=2.0, read_hz=10.0):
 	reads. It does NOT show which of the counter and the power sensor is right.
 	The GPU should be idle or running a steady load. Milestone 4 found this
 	effect on WSL2 (driver 610.88): see docs/NVML_COUNTER_VALIDATION.md.
+
+	A pair in which the GPU changed performance state is excluded (the
+	workload changed, not the reads). Pairs are collected until `pairs` valid
+	ones exist or `max_pairs` (default 2 x pairs + 2) have been tried.
 	"""
+	max_pairs = max_pairs if max_pairs is not None else 2 * pairs + 2
 	result = {"status": UNKNOWN, "method": "paired windows: endpoints-only vs "
 	          f"counter read at {read_hz:g} Hz; identical endpoint reads",
 	          "window_s": window_s, "read_hz": read_hz}
@@ -457,7 +463,9 @@ def probe_counter_disturbance(pairs=3, window_s=6.0, rest_s=2.0, read_hz=10.0):
 		return (e1 - e0) / 1000.0 / (b - a), s0, pstate()
 
 	raw = []
-	for i in range(pairs):
+	for i in range(max_pairs):
+		if sum(1 for _, _, changed in raw if not changed) >= pairs:
+			break
 		# alternate which window goes first, so drift does not favour one
 		order = (False, True) if i % 2 == 0 else (True, False)
 		got = {polled: window(polled) for polled in order}

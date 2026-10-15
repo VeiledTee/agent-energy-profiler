@@ -170,9 +170,12 @@ Requires bare-metal Linux, other drivers, or an external reference:
   apart), and therefore the absolute bias of any figure.
 - Whether the historical runs were biased by the current-driver amount.
 
-## 8. Recommendations (not yet implemented)
+## 8. Recommendations
 
-Production behaviour is unchanged until these are decided.
+*Status (Milestone 5): 1–4 are implemented as opt-in measurement modes
+([MEASUREMENT_MODES.md](MEASUREMENT_MODES.md)); `aep run` now defaults to
+`auto`. 5 and 6 stand. Section 9 is expanded in
+[HARDWARE_VALIDATION_PROTOCOL.md](HARDWARE_VALIDATION_PROTOCOL.md).*
 
 1. **Default sampler: stop reading the energy counter at 10 Hz.** Record
    counter values at run and session boundaries (or ≤ 1 Hz, where no effect was

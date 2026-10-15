@@ -127,6 +127,17 @@ def energy_counter_supported() -> bool:
 	return False
 
 
+def driver_version():
+	"""NVIDIA driver version string, or None when NVML is unavailable."""
+	if not _ok:
+		return None
+	try:
+		value = _pynvml.nvmlSystemGetDriverVersion()
+		return value.decode("utf-8", "replace") if isinstance(value, bytes) else str(value)
+	except Exception:
+		return None
+
+
 def device_names():
 	"""Model name of each visible GPU; empty list when NVML is unavailable."""
 	if not _ok:

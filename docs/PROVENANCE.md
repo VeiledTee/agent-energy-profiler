@@ -779,6 +779,87 @@ Tools: `tools/nvml_diagnostics/`. Raw data and summaries: `results/nvml_m4/`.
   installed into a throwaway venv under `build/` with no pip cache, and
   removed afterwards.
 
+## Milestone 5: non-intrusive measurement architecture
+
+Design and semantics: [MEASUREMENT_MODES.md](MEASUREMENT_MODES.md). Field
+definitions: [SCHEMA_V2.md](SCHEMA_V2.md) section 6. Validation protocol for
+hardware not available here: [HARDWARE_VALIDATION_PROTOCOL.md](HARDWARE_VALIDATION_PROTOCOL.md).
+
+**Architecture (smallest change that separates counter reads from the
+timeline).**
+
+- `sampling`: the GPU energy counter has its own policy, `every_row`
+  (default, unchanged), `every_n_rows` or `boundaries` (`--counter-hz`,
+  `Sampler(counter_hz=)`). Averaged power and RAPL stay on every row. Rows
+  without a counter read leave the cell empty, which every reader (v1 and v2)
+  already treats as missing. Sparse policies add a final counter row on stop.
+  The sidecar (version 2) declares the policy in a `timeline` block.
+- `measurement`: modes `direct`, `sampled`, `hybrid`, `auto`;
+  `CounterDisturbance` (verdict + evidence source, UNKNOWN by default);
+  `resolve_mode` (conservative, never runs a diagnostic);
+  `measurement_config` (header block, model version 2). Two reason codes:
+  `not_read_by_mode`, `counter_not_sampled`.
+- `Session(mode=, disturbance=, timeline=)`: `sampled`/`hybrid` never read the
+  counter per span; the header records mode, reason, timeline, verdict and
+  driver version. Default `direct`, as before.
+- `attribution_v2.Timeline`: for timelines that declare a sparse policy, the
+  session-window GPU value is `counter_not_sampled` instead of interpolated;
+  new summary fields `run_counter` (first-to-last-reading counter energy,
+  with its own window) and `counter_intervals` (counter vs integrated power
+  per reading interval, diagnostic). Timelines without the declaration take
+  the previous code path.
+- `aep run`: `--mode` (default `auto`), `--hardware-report`, `--power-hz`
+  (`--hz` kept), `--counter-hz`; the mode is resolved before the program
+  starts, passed to it (`AEP_MEASUREMENT`) and written to `run.json`.
+- `report`: measurement section, run counter and interval diagnostics;
+  warnings `MEASUREMENT_NOT_RECORDED`, `COUNTER_DISTURBANCE_UNKNOWN`,
+  `COUNTER_DISTURBED`, `SPAN_ESTIMATES_ONLY`.
+
+**Behaviour changes.** Only `aep run`'s default (M3: per-span reads and a
+10 Hz counter; now `auto`, i.e. `sampled` unless a hardware report shows no
+disturbance). Everything else is opt-in. Existing artifacts attribute and
+report as before, plus warnings that their counter-read rate was not known
+to be harmless.
+
+**A defect caught by the v2 golden fixture during development.** A new mode
+constant first shadowed the existing method constant `SAMPLED`, relabelling
+RAPL values' `method`; `tests/test_golden_v2.py` failed and the constants
+were renamed (`MODE_*`) before anything was committed.
+
+**Validation on this machine (RTX 4090, WSL2, driver 610.88).**
+
+| Check | Result |
+|---|---|
+| Full suite | 474 passed, 9 skipped |
+| v1 golden fixtures, v2 golden fixture | byte-identical |
+| Frozen research runs (v1 attribution) | identical |
+| Clean wheel, minimal / with `[test,gpu]` | 380 passed, 59 skipped / 429 passed, 10 skipped; no failures. The installed `aep` ran `validate --counter-disturbance`, `run` in `auto` (→ `sampled`) and `--mode direct`, GPU present and absent |
+| `aep validate --counter-disturbance` on this GPU | DISTURBED, retained median 0.862 (pairs 0.687, 0.862, 0.865; `results/nvml_m5/`). A first attempt was INCONCLUSIVE because two of three pairs saw the idle GPU change performance state; the probe now collects pairs until it has enough valid ones |
+| Sampler interference (M4 method, idle, 5 blocks): counter retained under a running sampler | original default 0.866 ± 0.007; `boundaries` 10 Hz power 0.996 ± 0.018; `boundaries` 50 Hz power 0.991 ± 0.016; `hybrid` 1 Hz 0.984 ± 0.019 |
+| Per-span overhead (median, real NVML) | `direct` 1.9–4.5 ms (p90 ~9.5 ms); `sampled`/`hybrid` 0.014–0.042 ms |
+| v2 attribution, 230k nested spans | legacy timeline 18.6 s / 270 MB; sparse timeline 17.3 s / 270 MB (M3: 21.0 s / 270 MB) |
+| `aep report` on 230k spans | 5.1 s, 161 MB |
+
+Raw data: `results/nvml_m5/sampler_interference.json`. These show the
+modes avoid the *detectable* interference measured in M4 on this host. They
+do not show accuracy: no external reference was available.
+
+**Tests.** `tests/test_measurement_modes.py` (22): mode resolution for every
+verdict; counter policies; per-span reads per mode (counted); GPU disabled;
+`from_env` provenance; sampler policies through a counting fake NVML
+(first/final-row reads, every n-th row, power on every row, clean exit);
+sparse attribution with nested, overlapping and short spans, missing power
+samples, a counter reset, different counter/power rates; report warnings for
+unknown, detected and no disturbance and for legacy artifacts; `aep run` in
+`auto` without evidence, `auto` with NOT_DETECTED, and `hybrid` at an
+explicit rate.
+
+**Remaining uncertainty.** Host-specific disturbance (one GPU, one driver,
+WSL2); the 2–4% gap between undisturbed counter and averaged power; the lag
+of averaged power (estimates of short spans and steps are biased); hybrid's
+1 Hz rate retains 0.984 ± 0.019 here, consistent with the ~1% the M4 model
+predicts but not resolved from zero.
+
 ## Remaining references to the research repository
 
 The research repository is not a dependency: no code imports it, no test
@@ -809,3 +890,4 @@ schema v1 and generic in role. Renaming them is a schema-v2 decision.
 | 0.2.0 (M2) | Additive schema v2: `Session`, `measurement`, `schema_v2`, `accounting`, `attribution_v2` (`aep-attribute-v2`), `sampling.Sampler`, v1 → v2 reader. `attribution.counter_window` factored out of `rapl_delta_prepared` (same arithmetic). No v1 behaviour change. | identical: all four fixtures byte for byte, and the three frozen runs |
 | 0.2.0 + M3 (version not bumped) | Streaming v2 attribution (same output, ~5–9× less memory); `report.py`; `aep` CLI and `Session.from_env`; examples; `test` extra; v2 golden fixture from M2. No v1 or v2 output change. NVML counter-disturbance finding documented, not corrected. | identical: v1 fixtures, frozen runs, and the v2 fixture |
 | 0.2.0 + M4 (version not bumped) | NVML counter validation: diagnostics in `tools/nvml_diagnostics/`, raw results in `results/nvml_m4/`, `docs/NVML_COUNTER_VALIDATION.md`, opt-in `aep validate --counter-disturbance`, a note on the resolution probe's step. No measurement behaviour changed. | identical: v1 fixtures, frozen runs, and the v2 fixture |
+| 0.2.0 + M5 (version not bumped) | Measurement modes (`direct`/`sampled`/`hybrid`/`auto`), sampler counter policies, measurement provenance (model version 2), run counter and interval diagnostics, disturbance-aware report warnings; `aep run` defaults to `auto`. Existing fields keep their meaning. | identical: v1 fixtures, frozen runs, and the v2 fixture |

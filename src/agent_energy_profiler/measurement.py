@@ -27,12 +27,145 @@ GPU_SOURCE = "nvml_total_energy_counter"
 IN_BAND = "in_band_counter_delta"
 SAMPLED = "sampled_counter_interpolated"
 
-#: Reason codes (docs/SCHEMA_V2.md section 2.5).
+#: Reason codes (docs/SCHEMA_V2.md section 2.5). The last two arrived with
+#: measurement modes (Milestone 5).
 REASONS = frozenset({
 	"disabled", "no_counter", "read_failed", "counter_decrease",
 	"counter_discontinuity", "insufficient_samples", "clock_anomaly",
 	"not_covered", "devices_changed",
+	"not_read_by_mode", "counter_not_sampled",
 })
+
+
+# --------------------------------------------------------------------------
+# measurement modes (Milestone 5)
+# --------------------------------------------------------------------------
+
+#: Version of the measurement model recorded in session headers. Absent
+#: (sessions written before Milestone 5) means version 1: per-span counter
+#: reads, whatever sampler the caller ran.
+MEASUREMENT_MODEL_VERSION = 2
+
+MODE_DIRECT = "direct"
+MODE_SAMPLED = "sampled"
+MODE_HYBRID = "hybrid"
+MODE_AUTO = "auto"
+
+#: What each mode reads. `timeline_counter_hz`: the sampler's GPU energy
+#: counter rate (0 = only its first and final row; see sampling.counter_policy).
+MODES = {
+	MODE_DIRECT: {
+		"span_counter_reads": True,
+		"timeline_counter_hz": 0.0,
+		"gpu_span_energy": "measured: in-band counter difference at each span's boundaries",
+		"gpu_run_energy": "measured: sampler counter at its first and final row",
+	},
+	MODE_SAMPLED: {
+		"span_counter_reads": False,
+		"timeline_counter_hz": 0.0,
+		"gpu_span_energy": "estimated only: integrated averaged power (estimates.gpu)",
+		"gpu_run_energy": "measured: sampler counter at its first and final row",
+	},
+	MODE_HYBRID: {
+		"span_counter_reads": False,
+		"timeline_counter_hz": 1.0,
+		"gpu_span_energy": "estimated only: integrated averaged power (estimates.gpu)",
+		"gpu_run_energy": "measured: sampler counter at its first and final row, plus a "
+		                  "measured counter series at the timeline counter rate, checked "
+		                  "against integrated power interval by interval",
+	},
+}
+
+UNKNOWN_VERDICT = "UNKNOWN"
+
+
+class CounterDisturbance:
+	"""Whether reading the energy counter is known to lower what it reports.
+
+	verdict: DISTURBED, NOT_DETECTED, INCONCLUSIVE (from
+	`aep validate --counter-disturbance`), or UNKNOWN when no test result is
+	available. UNKNOWN never means "not disturbed".
+	"""
+
+	def __init__(self, verdict=UNKNOWN_VERDICT, source=None, retained_median=None,
+	             read_hz=None, measured_at_unix_s=None, driver_version=None):
+		self.verdict = verdict
+		self.source = source
+		self.retained_median = retained_median
+		self.read_hz = read_hz
+		self.measured_at_unix_s = measured_at_unix_s
+		self.driver_version = driver_version
+
+	@classmethod
+	def unknown(cls):
+		return cls()
+
+	@classmethod
+	def from_hardware_report(cls, report, source=None):
+		"""From an `aep validate --counter-disturbance --json` report."""
+		if isinstance(report, str):
+			source = source or report
+			with open(report) as f:
+				report = json.load(f)
+		d = (report or {}).get("gpu_counter_disturbance") or {}
+		if d.get("status") != "SUPPORTED" or not d.get("verdict"):
+			return cls(source=(source or "hardware report") + " (no disturbance test in it)")
+		return cls(d["verdict"], source or "hardware report", d.get("retained_median"),
+		           d.get("read_hz"), (report or {}).get("generated_at"),
+		           ((report or {}).get("gpu") or {}).get("driver_version"))
+
+	def to_dict(self):
+		return {"verdict": self.verdict, "source": self.source,
+		        "retained_median": self.retained_median, "read_hz": self.read_hz,
+		        "measured_at_unix_s": self.measured_at_unix_s,
+		        "driver_version": self.driver_version}
+
+	@classmethod
+	def from_dict(cls, data):
+		data = data or {}
+		return cls(data.get("verdict", UNKNOWN_VERDICT), data.get("source"),
+		           data.get("retained_median"), data.get("read_hz"),
+		           data.get("measured_at_unix_s"), data.get("driver_version"))
+
+
+def resolve_mode(requested, disturbance=None):
+	"""(mode, reason) for a requested mode. Never runs a diagnostic.
+
+	`auto` uses per-span counter reads (direct) only when a disturbance test
+	on this host found no effect. A DISTURBED, INCONCLUSIVE or UNKNOWN verdict
+	selects `sampled`: the run is still measured by the counter at its
+	boundaries, and per-span values are estimates, labelled as such.
+	"""
+	disturbance = disturbance or CounterDisturbance.unknown()
+	if requested in MODES:
+		return requested, "requested explicitly"
+	if requested != MODE_AUTO:
+		raise ValueError(f"mode must be one of {sorted(MODES) + [MODE_AUTO]}")
+	verdict = disturbance.verdict
+	if verdict == "NOT_DETECTED":
+		return MODE_DIRECT, (f"auto: counter disturbance NOT_DETECTED ({disturbance.source}); "
+		                f"per-span counter reads enabled")
+	if verdict == "DISTURBED":
+		return MODE_SAMPLED, (f"auto: counter disturbance DISTURBED ({disturbance.source}); "
+		                 f"no per-span counter reads")
+	return MODE_SAMPLED, (f"auto: counter disturbance {verdict} "
+	                 f"({disturbance.source or 'no test result available'}); per-span "
+	                 f"counter reads not enabled without evidence they are harmless here")
+
+
+def measurement_config(mode, requested, reason, disturbance, timeline=None):
+	"""The `config.measurement` block of a session header."""
+	return {
+		"model_version": MEASUREMENT_MODEL_VERSION,
+		"mode": mode,
+		"requested_mode": requested,
+		"mode_reason": reason,
+		"span_counter_reads": MODES[mode]["span_counter_reads"],
+		"semantics": {k: v for k, v in MODES[mode].items()
+		              if k in ("gpu_span_energy", "gpu_run_energy")},
+		"timeline": timeline,
+		"counter_disturbance": (disturbance or CounterDisturbance.unknown()).to_dict(),
+	}
 
 
 # --------------------------------------------------------------------------

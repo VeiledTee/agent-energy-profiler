@@ -10,7 +10,7 @@ instead (needs `transformers` and a one-time download).
 
 ```bash
 python -m venv .venv
-.venv/bin/pip install 'agent-energy-profiler[gpu]'      # NVML bindings
+.venv/bin/pip install '/path/to/agent-energy-profiler[gpu]' # a clone or wheel, with NVML bindings
 .venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cu124
 .venv/bin/pip install transformers                      # only for --hf-model
 ```
@@ -21,13 +21,21 @@ Pick the PyTorch build that matches your driver (see pytorch.org). Check:
 ## Run
 
 ```bash
-aep validate --json hw.json
-aep run --resolution-report hw.json --out-dir runs/gpu -- \
+aep validate --counter-disturbance --json hw.json
+aep run --hardware-report hw.json --out-dir runs/gpu -- \
     python examples/gpu_inference/inference.py
 ```
 
 Options: `--prompts 8 --new-tokens 64 --layers 12 --width 1024`,
 `--hf-model distilgpt2`, `--device cpu`.
+
+**Mode.** Per-generation *measured* GPU energy needs `direct` mode (counter
+read at each span's boundaries). `auto` selects it only when the hardware
+report's disturbance test found no effect; otherwise the run is `sampled`:
+the run total is measured and each generation's GPU energy is an estimate
+from averaged power. On a host where reads disturb the counter, `--mode
+direct` costs about 2 × 10 ms of accumulation per span, ~6% of a 330 ms
+generation on the development host.
 
 ## Output
 

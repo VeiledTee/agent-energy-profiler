@@ -68,24 +68,43 @@ with Session.from_env("spans.jsonl") as session:          # `aep run` sets the p
 ```
 
 ```bash
-aep validate --json hw.json                               # once per machine
-aep run --resolution-report hw.json --out-dir runs/demo -- python my_agent.py
+aep validate --counter-disturbance --json hw.json          # once per machine (~40 s)
+aep run --hardware-report hw.json --out-dir runs/demo -- python my_agent.py
 ```
 
 `aep run` starts the hardware sampler, runs the program, attributes its spans
 and prints a report. Three complete examples (CPU-only, GPU inference, an
 agent loop) are in [examples/](examples/).
 
+## Measurement modes
+
+How often the GPU energy counter is read is a choice, because on at least one
+host each read lowers what the counter reports
+([docs/NVML_COUNTER_VALIDATION.md](docs/NVML_COUNTER_VALIDATION.md)):
+
+| Mode | Per-span GPU energy | Measured GPU energy |
+|---|---|---|
+| `direct` | measured: counter read at each span's boundaries | each span, and the run |
+| `sampled` | estimated from averaged power | the run (counter at the sampler's first and last row) |
+| `hybrid` | estimated from averaged power | the run, plus a 1 Hz measured counter series checked against the estimate |
+| `auto` | `direct` only if `aep validate --counter-disturbance` found no effect on this host; otherwise `sampled` | |
+
+`aep run` defaults to `auto`; `Session` defaults to `direct` (unchanged).
+Every artifact records the mode, the sampler's read rates, the disturbance
+verdict and its source; reports warn when frequent counter reads met an
+unknown or detected disturbance. Details and migration:
+[docs/MEASUREMENT_MODES.md](docs/MEASUREMENT_MODES.md).
+
 ## CLI
 
 | Command | Does |
 |---|---|
 | `aep validate [--json hw.json] [--counter-disturbance]` | probes NVML and RAPL, measures the GPU counter's update interval, says whether a complete gpu+cpu+dram total is possible here; with `--counter-disturbance` (~30 s) also tests whether reading the counter lowers what it reports |
-| `aep run [opts] -- CMD` | runs CMD with the sampler on; writes `run.json` (whole-program energy), and if the program records spans, attributes them and prints the report |
+| `aep run [--mode M] [--hardware-report hw.json] [--power-hz N] [--counter-hz N] -- CMD` | runs CMD with the sampler on; writes `run.json` (whole-program energy, measurement mode); if the program records spans, attributes them and prints the report |
 | `aep attribute FILE --power power.csv` | joins spans (v2) or events (v1) with the hardware timeline |
 | `aep report DIR_OR_FILE [--format text\|json\|csv]` | readable or structured summary of a v1 or v2 run |
 | `aep export DIR_OR_FILE --out-dir D` | `spans.csv` (one row per span), `operations.csv`, `report.json` |
-| `aep sample --out power.csv` | the sampler on its own |
+| `aep sample --out power.csv [--hz N] [--counter-hz N]` | the sampler on its own (default: counter on every row, as before; `--counter-hz 0`: first and last row only) |
 
 `python -m agent_energy_profiler …` is equivalent to `aep …`.
 
@@ -160,9 +179,12 @@ overhead is a large fraction of the work. Use `gpu=False` (or
    field) removes ~10 ms of accumulation from it, for all readers: the 10 Hz
    sampler lowers the counter ~10–11%, and frequent span reads lower it
    further. Averaged-power and temperature reads do not. Check your host with
-   `aep validate --counter-disturbance`; where it reports DISTURBED, treat GPU
-   figures taken with frequent reads as **lower bounds**. Details and bare-metal
-   requirements: [docs/NVML_COUNTER_VALIDATION.md](docs/NVML_COUNTER_VALIDATION.md).
+   `aep validate --counter-disturbance`; where it reports DISTURBED, use
+   `sampled` or `hybrid` (what `auto` does) and treat GPU figures taken with
+   frequent reads as **lower bounds**. With boundary-only counter reads the
+   effect was no longer detectable on that host. Nothing here establishes
+   accuracy against an external meter: see
+   [docs/HARDWARE_VALIDATION_PROTOCOL.md](docs/HARDWARE_VALIDATION_PROTOCOL.md).
 2. **Device-level only.** Concurrent work, other processes and background
    services on the same device are inside every number.
 3. **Counter resolution.** The NVML counter updates every ~100–107 ms (it

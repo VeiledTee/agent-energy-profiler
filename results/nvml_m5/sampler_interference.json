@@ -1,0 +1,456 @@
+{
+  "experiment": "sampler_interference",
+  "args": {
+    "out": "results/nvml_m5/sampler_interference.json",
+    "reps": 5,
+    "window": 8.0,
+    "rest": 3.0,
+    "seed": 20261016
+  },
+  "conditions": {
+    "no_sampler": null,
+    "legacy_10hz": {
+      "hz": 10.0,
+      "counter_hz": null
+    },
+    "boundaries_10hz": {
+      "hz": 10.0,
+      "counter_hz": 0.0
+    },
+    "boundaries_50hz": {
+      "hz": 50.0,
+      "counter_hz": 0.0
+    },
+    "hybrid_1hz": {
+      "hz": 10.0,
+      "counter_hz": 1.0
+    }
+  },
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 4090",
+    "driver_version": "610.88",
+    "nvml_version": "13.610.57.01",
+    "cuda_driver_version": 13030,
+    "power_limit_mw": 450000,
+    "default_power_limit_mw": 450000,
+    "compute_processes_visible": 0
+  },
+  "host": {
+    "platform": "Linux-5.15.167.4-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+    "python": "3.12.3",
+    "wsl": true,
+    "pynvml_module": "/home/penguins/agent-energy-profiler/.venv/lib/python3.12/site-packages/pynvml.py",
+    "nvidia_smi": "name, driver_version, power.draw [W], power.draw.average [W], power.draw.instant [W], power.limit [W], pstate\nNVIDIA GeForce RTX 4090, 610.88, 30.43 W, 30.43 W, 30.46 W, 450.00 W, P8"
+  },
+  "summary": {
+    "no_sampler": {
+      "n": 5,
+      "retained_mean": 1.0,
+      "ci95_approx": 0.0,
+      "retained_per_block": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "legacy_10hz": {
+      "n": 4,
+      "retained_mean": 0.8659742665292954,
+      "ci95_approx": 0.0067842654345784915,
+      "retained_per_block": [
+        0.872,
+        0.8632,
+        0.871,
+        0.8577
+      ]
+    },
+    "boundaries_10hz": {
+      "n": 4,
+      "retained_mean": 0.9955267515915638,
+      "ci95_approx": 0.017602979123695652,
+      "retained_per_block": [
+        0.9983,
+        0.995,
+        1.0159,
+        0.973
+      ]
+    },
+    "boundaries_50hz": {
+      "n": 5,
+      "retained_mean": 0.9906727042427528,
+      "ci95_approx": 0.01644507805874945,
+      "retained_per_block": [
+        0.9961,
+        0.9946,
+        1.0042,
+        0.9895,
+        0.9689
+      ]
+    },
+    "hybrid_1hz": {
+      "n": 4,
+      "retained_mean": 0.9838119864672381,
+      "ci95_approx": 0.019078830435483307,
+      "retained_per_block": [
+        0.9883,
+        0.9932,
+        0.9979,
+        0.9558
+      ]
+    }
+  },
+  "trials": [
+    {
+      "block": 0,
+      "position": 0,
+      "condition": "no_sampler",
+      "window_s": 8.015732337000372,
+      "counter_w": 29.328324614189157,
+      "state_after": {
+        "temperature_c": 38,
+        "sm_clock_mhz": 210,
+        "mem_clock_mhz": 405,
+        "pstate": 8,
+        "power_avg_mw": 30285
+      }
+    },
+    {
+      "block": 0,
+      "position": 1,
+      "condition": "hybrid_1hz",
+      "window_s": 8.00629745599872,
+      "counter_w": 28.9858078937752,
+      "state_after": {
+        "temperature_c": 38,
+        "sm_clock_mhz": 210,
+        "mem_clock_mhz": 405,
+        "pstate": 8,
+        "power_avg_mw": 30517
+      }
+    },
+    {
+      "block": 0,
+      "position": 2,
+      "condition": "boundaries_10hz",
+      "window_s": 8.002609816001495,
+      "counter_w": 29.2775738649053,
+      "state_after": {
+        "temperature_c": 38,
+        "sm_clock_mhz": 210,
+        "mem_clock_mhz": 405,
+        "pstate": 8,
+        "power_avg_mw": 30690
+      }
+    },
+    {
+      "block": 0,
+      "position": 3,
+      "condition": "boundaries_50hz",
+      "window_s": 8.008063735996984,
+      "counter_w": 29.213803450188735,
+      "state_after": {
+        "temperature_c": 38,
+        "sm_clock_mhz": 210,
+        "mem_clock_mhz": 405,
+        "pstate": 8,
+        "power_avg_mw": 30377
+      }
+    },
+    {
+      "block": 0,
+      "position": 4,
+      "condition": "legacy_10hz",
+      "window_s": 8.008347942999535,
+      "counter_w": 25.574438255899327,
+      "state_after": {
+        "temperature_c": 38,
+        "sm_clock_mhz": 210,
+        "mem_clock_mhz": 405,
+        "pstate": 8,
+        "power_avg_mw": 30337
+      }
+    },
+    {
+      "block": 1,
+      "position": 0,
+      "condition": "hybrid_1hz",
+      "window_s": 8.005585040998994,
+      "counter_w": 28.518215574599715,
+      "state_after": {
+        "temperature_c": 38,
+        "sm_clock_mhz": 210,
+        "mem_clock_mhz": 405,
+        "pstate": 8,
+        "power_avg_mw": 30221
+      }
+    },
+    {
+      "block": 1,
+      "position": 1,
+      "condition": "boundaries_10hz",
+      "window_s": 8.010142746999918,
+      "counter_w": 28.942305689474672,
+      "state_after": {
+        "temperature_c": 38,
+        "sm_clock_mhz": 210,
+        "mem_clock_mhz": 405,
+        "pstate": 8,
+        "power_avg_mw": 30000
+      }
+    },
+    {
+      "block": 1,
+      "position": 2,
+      "condition": "no_sampler",
+      "window_s": 8.00813787199877,
+      "counter_w": 41.74890659275744,
+      "state_after": {
+        "temperature_c": 39,
+        "sm_clock_mhz": 645,
+        "mem_clock_mhz": 810,
+        "pstate": 5,
+        "power_avg_mw": 34736
+      }
+    },
+    {
+      "block": 1,
+      "position": 3,
+      "condition": "legacy_10hz",
+      "window_s": 8.008012786001927,
+      "counter_w": 26.001581861104423,
+      "state_after": {
+        "temperature_c": 38,
+        "sm_clock_mhz": 210,
+        "mem_clock_mhz": 405,
+        "pstate": 8,
+        "power_avg_mw": 30706
+      }
+    },
+    {
+      "block": 1,
+      "position": 4,
+      "condition": "boundaries_50hz",
+      "window_s": 8.009762890000275,
+      "counter_w": 41.52157867434558,
+      "state_after": {
+        "temperature_c": 39,
+        "sm_clock_mhz": 585,
+        "mem_clock_mhz": 810,
+        "pstate": 5,
+        "power_avg_mw": 34323
+      }
+    },
+    {
+      "block": 2,
+      "position": 0,
+      "condition": "legacy_10hz",
+      "window_s": 8.008653218999825,
+      "counter_w": 25.40801735768158,
+      "state_after": {
+        "temperature_c": 38,
+        "sm_clock_mhz": 210,
+        "mem_clock_mhz": 405,
+        "pstate": 8,
+        "power_avg_mw": 30523
+      }
+    },
+    {
+      "block": 2,
+      "position": 1,
+      "condition": "boundaries_50hz",
+      "window_s": 8.015144585999224,
+      "counter_w": 29.559666386288065,
+      "state_after": {
+        "temperature_c": 38,
+        "sm_clock_mhz": 210,
+        "mem_clock_mhz": 405,
+        "pstate": 8,
+        "power_avg_mw": 31006
+      }
+    },
+    {
+      "block": 2,
+      "position": 2,
+      "condition": "no_sampler",
+      "window_s": 8.008994562002044,
+      "counter_w": 29.43503059903062,
+      "state_after": {
+        "temperature_c": 38,
+        "sm_clock_mhz": 210,
+        "mem_clock_mhz": 405,
+        "pstate": 8,
+        "power_avg_mw": 30743
+      }
+    },
+    {
+      "block": 2,
+      "position": 3,
+      "condition": "boundaries_10hz",
+      "window_s": 8.017175152999698,
+      "counter_w": 29.28687418188041,
+      "state_after": {
+        "temperature_c": 38,
+        "sm_clock_mhz": 210,
+        "mem_clock_mhz": 405,
+        "pstate": 8,
+        "power_avg_mw": 30608
+      }
+    },
+    {
+      "block": 2,
+      "position": 4,
+      "condition": "hybrid_1hz",
+      "window_s": 8.014565880999726,
+      "counter_w": 29.235145543625237,
+      "state_after": {
+        "temperature_c": 38,
+        "sm_clock_mhz": 210,
+        "mem_clock_mhz": 405,
+        "pstate": 8,
+        "power_avg_mw": 30856
+      }
+    },
+    {
+      "block": 3,
+      "position": 0,
+      "condition": "boundaries_50hz",
+      "window_s": 8.017930074001924,
+      "counter_w": 29.01995874901218,
+      "state_after": {
+        "temperature_c": 38,
+        "sm_clock_mhz": 210,
+        "mem_clock_mhz": 405,
+        "pstate": 8,
+        "power_avg_mw": 30581
+      }
+    },
+    {
+      "block": 3,
+      "position": 1,
+      "condition": "legacy_10hz",
+      "window_s": 8.031094521000341,
+      "counter_w": 25.54396532920488,
+      "state_after": {
+        "temperature_c": 38,
+        "sm_clock_mhz": 210,
+        "mem_clock_mhz": 405,
+        "pstate": 8,
+        "power_avg_mw": 31072
+      }
+    },
+    {
+      "block": 3,
+      "position": 2,
+      "condition": "boundaries_10hz",
+      "window_s": 8.00798155600205,
+      "counter_w": 29.792401285088438,
+      "state_after": {
+        "temperature_c": 38,
+        "sm_clock_mhz": 210,
+        "mem_clock_mhz": 405,
+        "pstate": 8,
+        "power_avg_mw": 30892
+      }
+    },
+    {
+      "block": 3,
+      "position": 3,
+      "condition": "hybrid_1hz",
+      "window_s": 8.00638411700129,
+      "counter_w": 29.265645586806947,
+      "state_after": {
+        "temperature_c": 38,
+        "sm_clock_mhz": 210,
+        "mem_clock_mhz": 405,
+        "pstate": 8,
+        "power_avg_mw": 30603
+      }
+    },
+    {
+      "block": 3,
+      "position": 4,
+      "condition": "no_sampler",
+      "window_s": 8.00912014399728,
+      "counter_w": 29.32681690086029,
+      "state_after": {
+        "temperature_c": 38,
+        "sm_clock_mhz": 210,
+        "mem_clock_mhz": 405,
+        "pstate": 8,
+        "power_avg_mw": 30439
+      }
+    },
+    {
+      "block": 4,
+      "position": 0,
+      "condition": "no_sampler",
+      "window_s": 8.016693323999789,
+      "counter_w": 30.283308864168095,
+      "state_after": {
+        "temperature_c": 38,
+        "sm_clock_mhz": 210,
+        "mem_clock_mhz": 405,
+        "pstate": 8,
+        "power_avg_mw": 31263
+      }
+    },
+    {
+      "block": 4,
+      "position": 1,
+      "condition": "legacy_10hz",
+      "window_s": 8.009701077997306,
+      "counter_w": 25.973753324139967,
+      "state_after": {
+        "temperature_c": 38,
+        "sm_clock_mhz": 210,
+        "mem_clock_mhz": 405,
+        "pstate": 8,
+        "power_avg_mw": 31264
+      }
+    },
+    {
+      "block": 4,
+      "position": 2,
+      "condition": "hybrid_1hz",
+      "window_s": 8.028430864000256,
+      "counter_w": 28.944883992463385,
+      "state_after": {
+        "temperature_c": 38,
+        "sm_clock_mhz": 210,
+        "mem_clock_mhz": 405,
+        "pstate": 8,
+        "power_avg_mw": 30715
+      }
+    },
+    {
+      "block": 4,
+      "position": 3,
+      "condition": "boundaries_50hz",
+      "window_s": 8.002886659000069,
+      "counter_w": 29.342787172415203,
+      "state_after": {
+        "temperature_c": 38,
+        "sm_clock_mhz": 210,
+        "mem_clock_mhz": 405,
+        "pstate": 8,
+        "power_avg_mw": 30505
+      }
+    },
+    {
+      "block": 4,
+      "position": 4,
+      "condition": "boundaries_10hz",
+      "window_s": 8.00827820700215,
+      "counter_w": 29.465509801305114,
+      "state_after": {
+        "temperature_c": 38,
+        "sm_clock_mhz": 210,
+        "mem_clock_mhz": 405,
+        "pstate": 8,
+        "power_avg_mw": 30420
+      }
+    }
+  ]
+}
