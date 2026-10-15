@@ -1,0 +1,1430 @@
+[
+  {
+    "workload": "idle",
+    "gpu": {
+      "name": "NVIDIA GeForce RTX 4090",
+      "driver_version": "610.88",
+      "nvml_version": "13.610.57.01",
+      "cuda_driver_version": 13030,
+      "power_limit_mw": 450000,
+      "default_power_limit_mw": 450000,
+      "compute_processes_visible": 0
+    },
+    "host": {
+      "platform": "Linux-5.15.167.4-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+      "python": "3.12.3",
+      "wsl": true,
+      "pynvml_module": "/home/penguins/agent-energy-profiler/.venv/lib/python3.12/site-packages/pynvml.py",
+      "nvidia_smi": "name, driver_version, power.draw [W], power.draw.average [W], power.draw.instant [W], power.limit [W], pstate\nNVIDIA GeForce RTX 4090, 610.88, 28.37 W, 28.37 W, 28.31 W, 450.00 W, P8"
+    },
+    "args": {
+      "workload": "idle",
+      "workload_python": "",
+      "out": "results/nvml_m4/idle",
+      "device": 0,
+      "duration": 8.0,
+      "rest": 3.0,
+      "reps": 4,
+      "warmup": 20.0,
+      "seed": 20261015,
+      "max_temp": 83,
+      "conditions": ""
+    },
+    "aborted": null,
+    "endpoints_counter_w_per_block": [
+      27.602,
+      27.983,
+      27.113,
+      27.295
+    ],
+    "temperature_c_range": [
+      38,
+      39
+    ],
+    "carry_over_endpoints_w": {
+      "after_fast_energy_polling": [
+        27.295
+      ],
+      "after_other": [
+        27.602,
+        27.983,
+        27.113
+      ]
+    },
+    "conditions": {
+      "endpoints": {
+        "n_trials": 4,
+        "read_streams": [],
+        "reads_per_s": 0.0,
+        "counter_w_mean": 27.498040649953193,
+        "counter_w_ci95": 0.6064739729437216,
+        "relative_to_endpoints_mean": 1.0,
+        "relative_ci95": 0.0,
+        "relative_median": 1.0,
+        "relative_per_block": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "read_latency_ms_median": {}
+      },
+      "energy_1hz": {
+        "n_trials": 4,
+        "read_streams": [
+          [
+            "energy",
+            1.0
+          ]
+        ],
+        "reads_per_s": 0.8738461496236308,
+        "counter_w_mean": 27.345905086043157,
+        "counter_w_ci95": 0.17367272468869924,
+        "relative_to_endpoints_mean": 0.9946291857670608,
+        "relative_ci95": 0.025327458763018777,
+        "relative_median": 0.9990155808695922,
+        "relative_per_block": [
+          0.9951,
+          0.9722,
+          1.0083,
+          1.0029
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "counter_updates": {
+          "median_interval_ms": 999.3739249999999,
+          "median_step_mj": 27950.0,
+          "step_power_w": 27.63086352400788
+        },
+        "read_latency_ms_median": {
+          "energy": 1.376300000000441
+        }
+      },
+      "power_instant_10hz": {
+        "n_trials": 4,
+        "read_streams": [
+          [
+            "power_instant",
+            0.1
+          ]
+        ],
+        "reads_per_s": 9.992542753808301,
+        "counter_w_mean": 24.407451363209535,
+        "counter_w_ci95": 0.39137565006039876,
+        "relative_to_endpoints_mean": 0.8876770841072269,
+        "relative_ci95": 0.0155201965137411,
+        "relative_median": 0.8857092612065095,
+        "relative_per_block": [
+          0.8781,
+          0.8843,
+          0.9012,
+          0.8871
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "power_kind": "power_instant",
+        "power_mean_w": 28.476228125,
+        "counter_over_integrated_power_mean": 0.857159292297691,
+        "counter_over_power_ci95": 0.009528436855404426,
+        "read_latency_ms_median": {
+          "power_instant": 1.0734000000005572
+        }
+      },
+      "energy_10hz": {
+        "n_trials": 4,
+        "read_streams": [
+          [
+            "energy",
+            0.1
+          ]
+        ],
+        "reads_per_s": 9.993377409923113,
+        "counter_w_mean": 24.574942572498735,
+        "counter_w_ci95": 0.2431077137548669,
+        "relative_to_endpoints_mean": 0.8937779689535611,
+        "relative_ci95": 0.013133639793811694,
+        "relative_median": 0.896909427415252,
+        "relative_per_block": [
+          0.8959,
+          0.8816,
+          0.8997,
+          0.898
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "counter_updates": {
+          "median_interval_ms": 100.19579999999995,
+          "median_step_mj": 2567.5,
+          "step_power_w": 25.32610023013899
+        },
+        "read_latency_ms_median": {
+          "energy": 1.0094499999999256
+        }
+      },
+      "temperature_10hz": {
+        "n_trials": 4,
+        "read_streams": [
+          [
+            "temperature",
+            0.1
+          ]
+        ],
+        "reads_per_s": 9.995205621470399,
+        "counter_w_mean": 27.568316043133724,
+        "counter_w_ci95": 0.18912096249387078,
+        "relative_to_endpoints_mean": 1.0027246571172657,
+        "relative_ci95": 0.02642839225549551,
+        "relative_median": 1.0077455440163847,
+        "relative_per_block": [
+          1.0019,
+          0.9796,
+          1.0159,
+          1.0136
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "read_latency_ms_median": {
+          "temperature": 0.08825000000001193
+        }
+      },
+      "power_avg_10hz": {
+        "n_trials": 4,
+        "read_streams": [
+          [
+            "power_avg",
+            0.1
+          ]
+        ],
+        "reads_per_s": 9.996838191381126,
+        "counter_w_mean": 30.158693399452332,
+        "counter_w_ci95": 8.44671742847559,
+        "relative_to_endpoints_mean": 1.0952251454217448,
+        "relative_ci95": 0.28352381581489655,
+        "relative_median": 1.0107485940211731,
+        "relative_per_block": [
+          0.9971,
+          1.3623,
+          1.0133,
+          1.0082
+        ],
+        "state_changed_per_block": [
+          false,
+          true,
+          false,
+          false
+        ],
+        "n_state_changed": 1,
+        "power_kind": "power_avg",
+        "power_mean_w": 30.7968125,
+        "counter_over_integrated_power_mean": 0.978729006058499,
+        "counter_over_power_ci95": 0.021998600802772945,
+        "read_latency_ms_median": {
+          "power_avg": 0.16455000000004105
+        }
+      },
+      "energy_field_10hz": {
+        "n_trials": 4,
+        "read_streams": [
+          [
+            "energy_field",
+            0.1
+          ]
+        ],
+        "reads_per_s": 9.99788294446059,
+        "counter_w_mean": 24.412207421973132,
+        "counter_w_ci95": 0.46215763891255457,
+        "relative_to_endpoints_mean": 0.8878692761167064,
+        "relative_ci95": 0.02094469024317542,
+        "relative_median": 0.8843395317951477,
+        "relative_per_block": [
+          0.8761,
+          0.8838,
+          0.9067,
+          0.8848
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "counter_updates": {
+          "median_interval_ms": 100.49675000000025,
+          "median_step_mj": 2555.5,
+          "step_power_w": 25.26581272723204
+        },
+        "read_latency_ms_median": {
+          "energy_field": 1.0332999999998482
+        }
+      },
+      "combined_10hz": {
+        "n_trials": 4,
+        "read_streams": [
+          [
+            "power_avg",
+            0.1
+          ],
+          [
+            "energy",
+            0.1
+          ]
+        ],
+        "reads_per_s": 19.989766034477004,
+        "counter_w_mean": 24.361306609632976,
+        "counter_w_ci95": 0.4070614931911125,
+        "relative_to_endpoints_mean": 0.8860385034602509,
+        "relative_ci95": 0.022272237877126965,
+        "relative_median": 0.8832196510863006,
+        "relative_per_block": [
+          0.8772,
+          0.8733,
+          0.8892,
+          0.9044
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "power_kind": "power_avg",
+        "power_mean_w": 28.381925,
+        "counter_over_integrated_power_mean": 0.8583240012975953,
+        "counter_over_power_ci95": 0.010282466219756042,
+        "counter_updates": {
+          "median_interval_ms": 100.42685000000017,
+          "median_step_mj": 2556.5,
+          "step_power_w": 25.286585413020013
+        },
+        "read_latency_ms_median": {
+          "power_avg": 0.15410000000004587,
+          "energy": 0.9790000000000632
+        }
+      },
+      "energy_50hz": {
+        "n_trials": 4,
+        "read_streams": [
+          [
+            "energy",
+            0.02
+          ]
+        ],
+        "reads_per_s": 49.86013139466344,
+        "counter_w_mean": 12.177330488915427,
+        "counter_w_ci95": 0.26790452156794053,
+        "relative_to_endpoints_mean": 0.44292855271902376,
+        "relative_ci95": 0.015979102309030463,
+        "relative_median": 0.44153157621237926,
+        "relative_per_block": [
+          0.433,
+          0.4371,
+          0.4556,
+          0.4459
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "counter_updates": {
+          "median_interval_ms": 100.84547500000018,
+          "median_step_mj": 1347.75,
+          "step_power_w": 13.676180003678708
+        },
+        "read_latency_ms_median": {
+          "energy": 1.0079000000000615
+        }
+      },
+      "power_avg_50hz": {
+        "n_trials": 4,
+        "read_streams": [
+          [
+            "power_avg",
+            0.02
+          ]
+        ],
+        "reads_per_s": 49.866227366547974,
+        "counter_w_mean": 27.599968272010813,
+        "counter_w_ci95": 0.23101366520945119,
+        "relative_to_endpoints_mean": 1.0038671161313844,
+        "relative_ci95": 0.025892912599177857,
+        "relative_median": 1.0022652009568085,
+        "relative_per_block": [
+          0.9993,
+          0.9859,
+          1.025,
+          1.0053
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "power_kind": "power_avg",
+        "power_mean_w": 28.492605263157895,
+        "counter_over_integrated_power_mean": 0.9686812616392331,
+        "counter_over_power_ci95": 0.009985741621155233,
+        "read_latency_ms_median": {
+          "power_avg": 0.1544500000001392
+        }
+      },
+      "energy_200hz": {
+        "n_trials": 4,
+        "read_streams": [
+          [
+            "energy",
+            0.005
+          ]
+        ],
+        "reads_per_s": 193.2381635100691,
+        "counter_w_mean": 3.779078003430889,
+        "counter_w_ci95": 0.2467248013931313,
+        "relative_to_endpoints_mean": 0.13750615754985945,
+        "relative_ci95": 0.011891978673152856,
+        "relative_median": 0.13698522234810587,
+        "relative_per_block": [
+          0.1332,
+          0.1297,
+          0.1463,
+          0.1408
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "counter_updates": {
+          "median_interval_ms": 103.0753499999999,
+          "median_step_mj": 392.0,
+          "step_power_w": 3.7951045935286487
+        },
+        "read_latency_ms_median": {
+          "energy": 0.8438999999995644
+        }
+      },
+      "energy_1000hz": {
+        "n_trials": 4,
+        "read_streams": [
+          [
+            "energy",
+            0.001
+          ]
+        ],
+        "reads_per_s": 665.5733540535612,
+        "counter_w_mean": 0.9340654073795773,
+        "counter_w_ci95": 0.1886016011847715,
+        "relative_to_endpoints_mean": 0.033970530425547596,
+        "relative_ci95": 0.006860776859404528,
+        "relative_median": 0.03397316269219053,
+        "relative_per_block": [
+          0.0295,
+          0.0368,
+          0.0384,
+          0.0311
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "counter_updates": {
+          "median_interval_ms": 103.05675000000036,
+          "median_step_mj": 76.0,
+          "step_power_w": 0.7388297780817328
+        },
+        "read_latency_ms_median": {
+          "energy": 0.7839000000000595
+        }
+      }
+    }
+  },
+  {
+    "workload": "steady",
+    "gpu": {
+      "name": "NVIDIA GeForce RTX 4090",
+      "driver_version": "610.88",
+      "nvml_version": "13.610.57.01",
+      "cuda_driver_version": 13030,
+      "power_limit_mw": 450000,
+      "default_power_limit_mw": 450000,
+      "compute_processes_visible": 1
+    },
+    "host": {
+      "platform": "Linux-5.15.167.4-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+      "python": "3.12.3",
+      "wsl": true,
+      "pynvml_module": "/home/penguins/agent-energy-profiler/.venv/lib/python3.12/site-packages/pynvml.py",
+      "nvidia_smi": "name, driver_version, power.draw [W], power.draw.average [W], power.draw.instant [W], power.limit [W], pstate\nNVIDIA GeForce RTX 4090, 610.88, 193.79 W, 193.79 W, 442.99 W, 450.00 W, P2"
+    },
+    "args": {
+      "workload": "steady",
+      "workload_python": "build/m4-venv/bin/python",
+      "out": "results/nvml_m4/steady",
+      "device": 0,
+      "duration": 8.0,
+      "rest": 3.0,
+      "reps": 4,
+      "warmup": 30.0,
+      "seed": 20261015,
+      "max_temp": 83,
+      "conditions": ""
+    },
+    "aborted": null,
+    "endpoints_counter_w_per_block": [
+      432.002,
+      427.538,
+      429.333,
+      435.105
+    ],
+    "temperature_c_range": [
+      68,
+      79
+    ],
+    "carry_over_endpoints_w": {
+      "after_fast_energy_polling": [
+        435.105
+      ],
+      "after_other": [
+        432.002,
+        427.538,
+        429.333
+      ]
+    },
+    "conditions": {
+      "endpoints": {
+        "n_trials": 4,
+        "read_streams": [],
+        "reads_per_s": 0.0,
+        "counter_w_mean": 430.994599666006,
+        "counter_w_ci95": 5.246229243108497,
+        "relative_to_endpoints_mean": 1.0,
+        "relative_ci95": 0.0,
+        "relative_median": 1.0,
+        "relative_per_block": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "read_latency_ms_median": {}
+      },
+      "energy_1hz": {
+        "n_trials": 4,
+        "read_streams": [
+          [
+            "energy",
+            1.0
+          ]
+        ],
+        "reads_per_s": 0.8743830636675946,
+        "counter_w_mean": 427.13620359257385,
+        "counter_w_ci95": 7.425825643289622,
+        "relative_to_endpoints_mean": 0.9910771949313495,
+        "relative_ci95": 0.018676313012456473,
+        "relative_median": 0.9916736915810266,
+        "relative_per_block": [
+          0.9762,
+          0.9935,
+          1.0047,
+          0.9899
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "counter_updates": {
+          "median_interval_ms": 998.8443999999997,
+          "median_step_mj": 439238.0,
+          "step_power_w": 438.1603402888503
+        },
+        "read_latency_ms_median": {
+          "energy": 1.094449999999969
+        }
+      },
+      "energy_field_10hz": {
+        "n_trials": 4,
+        "read_streams": [
+          [
+            "energy_field",
+            0.1
+          ]
+        ],
+        "reads_per_s": 9.992683700952677,
+        "counter_w_mean": 386.1195024329842,
+        "counter_w_ci95": 4.577855528148997,
+        "relative_to_endpoints_mean": 0.8959569726358787,
+        "relative_ci95": 0.021387448603930766,
+        "relative_median": 0.898055201154736,
+        "relative_per_block": [
+          0.8918,
+          0.9088,
+          0.9043,
+          0.8789
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "counter_updates": {
+          "median_interval_ms": 100.0751750000001,
+          "median_step_mj": 40035.75,
+          "step_power_w": 399.06589150888453
+        },
+        "read_latency_ms_median": {
+          "energy_field": 0.9099999999997443
+        }
+      },
+      "energy_10hz": {
+        "n_trials": 4,
+        "read_streams": [
+          [
+            "energy",
+            0.1
+          ]
+        ],
+        "reads_per_s": 9.993096711325203,
+        "counter_w_mean": 385.4799727594191,
+        "counter_w_ci95": 3.551281436549862,
+        "relative_to_endpoints_mean": 0.8944066812734359,
+        "relative_ci95": 0.0034704516044804273,
+        "relative_median": 0.894249669365944,
+        "relative_per_block": [
+          0.8921,
+          0.897,
+          0.8953,
+          0.8932
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "counter_updates": {
+          "median_interval_ms": 100.07170000000008,
+          "median_step_mj": 40069.5,
+          "step_power_w": 398.99789151712355
+        },
+        "read_latency_ms_median": {
+          "energy": 0.898299999999852
+        }
+      },
+      "power_instant_10hz": {
+        "n_trials": 4,
+        "read_streams": [
+          [
+            "power_instant",
+            0.1
+          ]
+        ],
+        "reads_per_s": 9.99385944696296,
+        "counter_w_mean": 386.6541034117363,
+        "counter_w_ci95": 6.095919919329879,
+        "relative_to_endpoints_mean": 0.8971631968826113,
+        "relative_ci95": 0.018419560174978356,
+        "relative_median": 0.8994599297629657,
+        "relative_per_block": [
+          0.8819,
+          0.9079,
+          0.9041,
+          0.8948
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "power_kind": "power_instant",
+        "power_mean_w": 445.83074375,
+        "counter_over_integrated_power_mean": 0.8673205394192709,
+        "counter_over_power_ci95": 0.008466895507955348,
+        "read_latency_ms_median": {
+          "power_instant": 0.921899999999809
+        }
+      },
+      "power_avg_10hz": {
+        "n_trials": 4,
+        "read_streams": [
+          [
+            "power_avg",
+            0.1
+          ]
+        ],
+        "reads_per_s": 9.994259899766828,
+        "counter_w_mean": 430.70687203654904,
+        "counter_w_ci95": 5.660586387101612,
+        "relative_to_endpoints_mean": 0.9993293265340772,
+        "relative_ci95": 0.0018601936249088998,
+        "relative_median": 0.9992003384806128,
+        "relative_per_block": [
+          0.9981,
+          0.9994,
+          0.999,
+          1.0009
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "power_kind": "power_avg",
+        "power_mean_w": 445.7612125,
+        "counter_over_integrated_power_mean": 0.966231218841945,
+        "counter_over_power_ci95": 0.012036067500032178,
+        "read_latency_ms_median": {
+          "power_avg": 0.17785000000003492
+        }
+      },
+      "temperature_10hz": {
+        "n_trials": 4,
+        "read_streams": [
+          [
+            "temperature",
+            0.1
+          ]
+        ],
+        "reads_per_s": 9.997095338832004,
+        "counter_w_mean": 432.1504572769558,
+        "counter_w_ci95": 4.360820784954389,
+        "relative_to_endpoints_mean": 1.0027086606654352,
+        "relative_ci95": 0.011653794969386089,
+        "relative_median": 0.9995203188491839,
+        "relative_per_block": [
+          0.9982,
+          1.0136,
+          0.9989,
+          1.0002
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "read_latency_ms_median": {
+          "temperature": 0.09875000000003631
+        }
+      },
+      "combined_10hz": {
+        "n_trials": 4,
+        "read_streams": [
+          [
+            "power_avg",
+            0.1
+          ],
+          [
+            "energy",
+            0.1
+          ]
+        ],
+        "reads_per_s": 19.98688511151542,
+        "counter_w_mean": 385.6827823864811,
+        "counter_w_ci95": 3.431412210623527,
+        "relative_to_endpoints_mean": 0.894899059704334,
+        "relative_ci95": 0.011770636160540776,
+        "relative_median": 0.8975629531530367,
+        "relative_per_block": [
+          0.9003,
+          0.8994,
+          0.8957,
+          0.8842
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "power_kind": "power_avg",
+        "power_mean_w": 446.493059375,
+        "counter_over_integrated_power_mean": 0.8637949117020343,
+        "counter_over_power_ci95": 0.009274655307549683,
+        "counter_updates": {
+          "median_interval_ms": 100.12155000000011,
+          "median_step_mj": 40431.0,
+          "step_power_w": 400.82015948135586
+        },
+        "read_latency_ms_median": {
+          "power_avg": 0.17330000000037593,
+          "energy": 0.8783999999999459
+        }
+      },
+      "power_avg_50hz": {
+        "n_trials": 4,
+        "read_streams": [
+          [
+            "power_avg",
+            0.02
+          ]
+        ],
+        "reads_per_s": 49.86395057986768,
+        "counter_w_mean": 432.3819980313351,
+        "counter_w_ci95": 3.625258878241842,
+        "relative_to_endpoints_mean": 1.0032437103946819,
+        "relative_ci95": 0.009432490519007462,
+        "relative_median": 1.0031223684276247,
+        "relative_per_block": [
+          1.0028,
+          1.0034,
+          1.0106,
+          0.9961
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "power_kind": "power_avg",
+        "power_mean_w": 445.8743182957394,
+        "counter_over_integrated_power_mean": 0.969743582905743,
+        "counter_over_power_ci95": 0.010513979583472366,
+        "read_latency_ms_median": {
+          "power_avg": 0.16969999999982832
+        }
+      },
+      "energy_50hz": {
+        "n_trials": 4,
+        "read_streams": [
+          [
+            "energy",
+            0.02
+          ]
+        ],
+        "reads_per_s": 49.866357885252384,
+        "counter_w_mean": 205.54592816668725,
+        "counter_w_ci95": 4.28817019638757,
+        "relative_to_endpoints_mean": 0.47692061479777137,
+        "relative_ci95": 0.009863687789363576,
+        "relative_median": 0.4766097583559513,
+        "relative_per_block": [
+          0.4702,
+          0.4843,
+          0.4739,
+          0.4794
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "counter_updates": {
+          "median_interval_ms": 100.55257500000003,
+          "median_step_mj": 21999.0,
+          "step_power_w": 220.06147852169795
+        },
+        "read_latency_ms_median": {
+          "energy": 0.8969500000000075
+        }
+      },
+      "energy_200hz": {
+        "n_trials": 4,
+        "read_streams": [
+          [
+            "energy",
+            0.005
+          ]
+        ],
+        "reads_per_s": 195.42204393767614,
+        "counter_w_mean": 81.27790278196889,
+        "counter_w_ci95": 3.049209264521921,
+        "relative_to_endpoints_mean": 0.18856834266381625,
+        "relative_ci95": 0.005171861440824495,
+        "relative_median": 0.18760722491953613,
+        "relative_per_block": [
+          0.1871,
+          0.1881,
+          0.1858,
+          0.1932
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "counter_updates": {
+          "median_interval_ms": 103.025025,
+          "median_step_mj": 8752.75,
+          "step_power_w": 85.2340229692297
+        },
+        "read_latency_ms_median": {
+          "energy": 0.865149999999898
+        }
+      },
+      "energy_1000hz": {
+        "n_trials": 4,
+        "read_streams": [
+          [
+            "energy",
+            0.001
+          ]
+        ],
+        "reads_per_s": 726.2913661943483,
+        "counter_w_mean": 16.261349460805054,
+        "counter_w_ci95": 2.6715434945547463,
+        "relative_to_endpoints_mean": 0.03775183095060934,
+        "relative_ci95": 0.006594246484204881,
+        "relative_median": 0.03872983149664219,
+        "relative_per_block": [
+          0.0374,
+          0.0401,
+          0.0415,
+          0.0321
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "counter_updates": {
+          "median_interval_ms": 103.17292500000008,
+          "median_step_mj": 1426.0,
+          "step_power_w": 13.811324080816917
+        },
+        "read_latency_ms_median": {
+          "energy": 0.6777999999999784
+        }
+      }
+    }
+  },
+  {
+    "workload": "pulsed",
+    "gpu": {
+      "name": "NVIDIA GeForce RTX 4090",
+      "driver_version": "610.88",
+      "nvml_version": "13.610.57.01",
+      "cuda_driver_version": 13030,
+      "power_limit_mw": 450000,
+      "default_power_limit_mw": 450000,
+      "compute_processes_visible": 1
+    },
+    "host": {
+      "platform": "Linux-5.15.167.4-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+      "python": "3.12.3",
+      "wsl": true,
+      "pynvml_module": "/home/penguins/agent-energy-profiler/.venv/lib/python3.12/site-packages/pynvml.py",
+      "nvidia_smi": "name, driver_version, power.draw [W], power.draw.average [W], power.draw.instant [W], power.limit [W], pstate\nNVIDIA GeForce RTX 4090, 610.88, 222.60 W, 222.60 W, 455.38 W, 450.00 W, P2"
+    },
+    "args": {
+      "workload": "pulsed",
+      "workload_python": "build/m4-venv/bin/python",
+      "out": "results/nvml_m4/pulsed",
+      "device": 0,
+      "duration": 8.0,
+      "rest": 3.0,
+      "reps": 4,
+      "warmup": 30.0,
+      "seed": 20261015,
+      "max_temp": 83,
+      "conditions": ""
+    },
+    "aborted": null,
+    "endpoints_counter_w_per_block": [
+      252.907,
+      254.114,
+      252.775,
+      255.812
+    ],
+    "temperature_c_range": [
+      49,
+      69
+    ],
+    "carry_over_endpoints_w": {
+      "after_fast_energy_polling": [
+        255.812
+      ],
+      "after_other": [
+        252.907,
+        254.114,
+        252.775
+      ]
+    },
+    "conditions": {
+      "endpoints": {
+        "n_trials": 4,
+        "read_streams": [],
+        "reads_per_s": 0.0,
+        "counter_w_mean": 253.90187995500767,
+        "counter_w_ci95": 2.2413248277296214,
+        "relative_to_endpoints_mean": 1.0,
+        "relative_ci95": 0.0,
+        "relative_median": 1.0,
+        "relative_per_block": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "read_latency_ms_median": {}
+      },
+      "energy_1hz": {
+        "n_trials": 4,
+        "read_streams": [
+          [
+            "energy",
+            1.0
+          ]
+        ],
+        "reads_per_s": 0.8739553385690251,
+        "counter_w_mean": 253.02470488450695,
+        "counter_w_ci95": 6.380993673375022,
+        "relative_to_endpoints_mean": 0.9965937619076668,
+        "relative_ci95": 0.029741342495120757,
+        "relative_median": 0.9910334072165489,
+        "relative_per_block": [
+          0.9863,
+          0.9958,
+          1.0231,
+          0.9812
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "counter_updates": {
+          "median_interval_ms": 999.3141,
+          "median_step_mj": 255969.25,
+          "step_power_w": 256.3990969909122
+        },
+        "read_latency_ms_median": {
+          "energy": 1.5261000000001967
+        }
+      },
+      "energy_10hz": {
+        "n_trials": 4,
+        "read_streams": [
+          [
+            "energy",
+            0.1
+          ]
+        ],
+        "reads_per_s": 9.983067272198493,
+        "counter_w_mean": 229.37703449271726,
+        "counter_w_ci95": 5.8228514138270855,
+        "relative_to_endpoints_mean": 0.9034542462658374,
+        "relative_ci95": 0.027291109871570927,
+        "relative_median": 0.9057209935132635,
+        "relative_per_block": [
+          0.9146,
+          0.8824,
+          0.92,
+          0.8968
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "counter_updates": {
+          "median_interval_ms": 100.46114999999966,
+          "median_step_mj": 25077.5,
+          "step_power_w": 237.52370086674793
+        },
+        "read_latency_ms_median": {
+          "energy": 1.3618500000001088
+        }
+      },
+      "temperature_10hz": {
+        "n_trials": 4,
+        "read_streams": [
+          [
+            "temperature",
+            0.1
+          ]
+        ],
+        "reads_per_s": 9.9857872480019,
+        "counter_w_mean": 259.07392661072913,
+        "counter_w_ci95": 4.268161173991564,
+        "relative_to_endpoints_mean": 1.020400821077182,
+        "relative_ci95": 0.020241528288561243,
+        "relative_median": 1.0214990124291656,
+        "relative_per_block": [
+          1.0209,
+          1.0348,
+          1.0221,
+          1.0038
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "read_latency_ms_median": {
+          "temperature": 0.09399999999992747
+        }
+      },
+      "power_instant_10hz": {
+        "n_trials": 4,
+        "read_streams": [
+          [
+            "power_instant",
+            0.1
+          ]
+        ],
+        "reads_per_s": 9.995170472403945,
+        "counter_w_mean": 229.46985131228908,
+        "counter_w_ci95": 7.3911738083740985,
+        "relative_to_endpoints_mean": 0.9037939350020565,
+        "relative_ci95": 0.03012963367671899,
+        "relative_median": 0.9021410455337286,
+        "relative_per_block": [
+          0.9165,
+          0.9235,
+          0.8874,
+          0.8878
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "power_kind": "power_instant",
+        "power_mean_w": 266.349771875,
+        "counter_over_integrated_power_mean": 0.8626105668519722,
+        "counter_over_power_ci95": 0.02742216932568143,
+        "read_latency_ms_median": {
+          "power_instant": 1.421649999999719
+        }
+      },
+      "energy_field_10hz": {
+        "n_trials": 4,
+        "read_streams": [
+          [
+            "energy_field",
+            0.1
+          ]
+        ],
+        "reads_per_s": 9.995192981044223,
+        "counter_w_mean": 229.45862587040875,
+        "counter_w_ci95": 4.583786053957774,
+        "relative_to_endpoints_mean": 0.9037122991854728,
+        "relative_ci95": 0.012455718401863106,
+        "relative_median": 0.9033988172954703,
+        "relative_per_block": [
+          0.9054,
+          0.8947,
+          0.9014,
+          0.9134
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "counter_updates": {
+          "median_interval_ms": 100.3733,
+          "median_step_mj": 22722.5,
+          "step_power_w": 201.90798385091193
+        },
+        "read_latency_ms_median": {
+          "energy_field": 1.3635999999999093
+        }
+      },
+      "power_avg_10hz": {
+        "n_trials": 4,
+        "read_streams": [
+          [
+            "power_avg",
+            0.1
+          ]
+        ],
+        "reads_per_s": 9.9955749417978,
+        "counter_w_mean": 260.8007134353205,
+        "counter_w_ci95": 5.894177038543599,
+        "relative_to_endpoints_mean": 1.0271824705530515,
+        "relative_ci95": 0.023174779544305475,
+        "relative_median": 1.0234479573933957,
+        "relative_per_block": [
+          1.0473,
+          1.0145,
+          1.0188,
+          1.0281
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "power_kind": "power_avg",
+        "power_mean_w": 266.94083750000004,
+        "counter_over_integrated_power_mean": 0.9770294657047205,
+        "counter_over_power_ci95": 0.022709738266267467,
+        "read_latency_ms_median": {
+          "power_avg": 0.17169999999999686
+        }
+      },
+      "combined_10hz": {
+        "n_trials": 4,
+        "read_streams": [
+          [
+            "power_avg",
+            0.1
+          ],
+          [
+            "energy",
+            0.1
+          ]
+        ],
+        "reads_per_s": 19.981473454649887,
+        "counter_w_mean": 227.27977004389567,
+        "counter_w_ci95": 3.3991968676305837,
+        "relative_to_endpoints_mean": 0.8951918417391957,
+        "relative_ci95": 0.019547584290353862,
+        "relative_median": 0.893019945562445,
+        "relative_per_block": [
+          0.897,
+          0.889,
+          0.9115,
+          0.8832
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "power_kind": "power_avg",
+        "power_mean_w": 267.217678125,
+        "counter_over_integrated_power_mean": 0.850556884384819,
+        "counter_over_power_ci95": 0.015685058486033285,
+        "counter_updates": {
+          "median_interval_ms": 100.22430000000027,
+          "median_step_mj": 26534.75,
+          "step_power_w": 219.13847614829152
+        },
+        "read_latency_ms_median": {
+          "power_avg": 0.17079999999969342,
+          "energy": 1.3966499999997772
+        }
+      },
+      "energy_50hz": {
+        "n_trials": 4,
+        "read_streams": [
+          [
+            "energy",
+            0.02
+          ]
+        ],
+        "reads_per_s": 49.11653668428801,
+        "counter_w_mean": 143.2053761213278,
+        "counter_w_ci95": 9.525407200550907,
+        "relative_to_endpoints_mean": 0.5640833620629357,
+        "relative_ci95": 0.0401951288162005,
+        "relative_median": 0.5673124934574187,
+        "relative_per_block": [
+          0.5656,
+          0.5914,
+          0.569,
+          0.5303
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "counter_updates": {
+          "median_interval_ms": 100.67195000000018,
+          "median_step_mj": 10882.0,
+          "step_power_w": 105.57697866220528
+        },
+        "read_latency_ms_median": {
+          "energy": 1.4492000000000393
+        }
+      },
+      "power_avg_50hz": {
+        "n_trials": 4,
+        "read_streams": [
+          [
+            "power_avg",
+            0.02
+          ]
+        ],
+        "reads_per_s": 49.835185850266186,
+        "counter_w_mean": 255.37958420964725,
+        "counter_w_ci95": 5.968840756396497,
+        "relative_to_endpoints_mean": 1.0058864794430076,
+        "relative_ci95": 0.030399888686728688,
+        "relative_median": 1.0051834060014762,
+        "relative_per_block": [
+          1.03,
+          1.0045,
+          1.0059,
+          0.9832
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "power_kind": "power_avg",
+        "power_mean_w": 265.91578506253074,
+        "counter_over_integrated_power_mean": 0.9602663577171822,
+        "counter_over_power_ci95": 0.018985331514214398,
+        "read_latency_ms_median": {
+          "power_avg": 0.17189999999978056
+        }
+      },
+      "energy_200hz": {
+        "n_trials": 4,
+        "read_streams": [
+          [
+            "energy",
+            0.005
+          ]
+        ],
+        "reads_per_s": 174.3433171216979,
+        "counter_w_mean": 63.02238038476064,
+        "counter_w_ci95": 2.376891128991458,
+        "relative_to_endpoints_mean": 0.24824117014157332,
+        "relative_ci95": 0.011171442821412397,
+        "relative_median": 0.25141622941384045,
+        "relative_per_block": [
+          0.2524,
+          0.2521,
+          0.2507,
+          0.2378
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "counter_updates": {
+          "median_interval_ms": 103.76567500000044,
+          "median_step_mj": 5031.5,
+          "step_power_w": 50.339968199143144
+        },
+        "read_latency_ms_median": {
+          "energy": 1.1183000000001275
+        }
+      },
+      "energy_1000hz": {
+        "n_trials": 4,
+        "read_streams": [
+          [
+            "energy",
+            0.001
+          ]
+        ],
+        "reads_per_s": 548.5132112304636,
+        "counter_w_mean": 37.01715688929723,
+        "counter_w_ci95": 2.556528376337587,
+        "relative_to_endpoints_mean": 0.14581177450606864,
+        "relative_ci95": 0.010878684134468967,
+        "relative_median": 0.14517202296462353,
+        "relative_per_block": [
+          0.1543,
+          0.1386,
+          0.1479,
+          0.1424
+        ],
+        "state_changed_per_block": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "n_state_changed": 0,
+        "counter_updates": {
+          "median_interval_ms": 103.28700000000023,
+          "median_step_mj": 1770.25,
+          "step_power_w": 17.619210529060055
+        },
+        "read_latency_ms_median": {
+          "energy": 0.7536999999999683
+        }
+      }
+    }
+  }
+]

@@ -1,0 +1,116 @@
+{
+  "experiment": "nvml_counter_read_disturbance",
+  "version": 1,
+  "started_unix_s": 1792095807.843018,
+  "args": {
+    "workload": "pulsed",
+    "workload_python": "build/m4-venv/bin/python",
+    "out": "results/nvml_m4/pulsed",
+    "device": 0,
+    "duration": 8.0,
+    "rest": 3.0,
+    "reps": 4,
+    "warmup": 30.0,
+    "seed": 20261015,
+    "max_temp": 83,
+    "conditions": ""
+  },
+  "conditions": {
+    "endpoints": [],
+    "temperature_10hz": [
+      [
+        "temperature",
+        0.1
+      ]
+    ],
+    "power_avg_10hz": [
+      [
+        "power_avg",
+        0.1
+      ]
+    ],
+    "power_avg_50hz": [
+      [
+        "power_avg",
+        0.02
+      ]
+    ],
+    "power_instant_10hz": [
+      [
+        "power_instant",
+        0.1
+      ]
+    ],
+    "energy_1hz": [
+      [
+        "energy",
+        1.0
+      ]
+    ],
+    "energy_10hz": [
+      [
+        "energy",
+        0.1
+      ]
+    ],
+    "energy_50hz": [
+      [
+        "energy",
+        0.02
+      ]
+    ],
+    "energy_200hz": [
+      [
+        "energy",
+        0.005
+      ]
+    ],
+    "energy_1000hz": [
+      [
+        "energy",
+        0.001
+      ]
+    ],
+    "energy_field_10hz": [
+      [
+        "energy_field",
+        0.1
+      ]
+    ],
+    "combined_10hz": [
+      [
+        "power_avg",
+        0.1
+      ],
+      [
+        "energy",
+        0.1
+      ]
+    ]
+  },
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 4090",
+    "driver_version": "610.88",
+    "nvml_version": "13.610.57.01",
+    "cuda_driver_version": 13030,
+    "power_limit_mw": 450000,
+    "default_power_limit_mw": 450000,
+    "compute_processes_visible": 1
+  },
+  "host": {
+    "platform": "Linux-5.15.167.4-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+    "python": "3.12.3",
+    "wsl": true,
+    "pynvml_module": "/home/penguins/agent-energy-profiler/.venv/lib/python3.12/site-packages/pynvml.py",
+    "nvidia_smi": "name, driver_version, power.draw [W], power.draw.average [W], power.draw.instant [W], power.limit [W], pstate\nNVIDIA GeForce RTX 4090, 610.88, 222.60 W, 222.60 W, 455.38 W, 450.00 W, P2"
+  },
+  "state_after_warmup": {
+    "temperature_c": 72,
+    "sm_clock_mhz": 2760,
+    "mem_clock_mhz": 10251,
+    "pstate": 2,
+    "power_avg_mw": 282829
+  },
+  "ended_unix_s": 1792096348.5870938,
+  "aborted": null
+}

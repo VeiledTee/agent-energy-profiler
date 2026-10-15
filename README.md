@@ -80,7 +80,7 @@ agent loop) are in [examples/](examples/).
 
 | Command | Does |
 |---|---|
-| `aep validate [--json hw.json]` | probes NVML and RAPL, measures the GPU counter's update interval, says whether a complete gpu+cpu+dram total is possible here |
+| `aep validate [--json hw.json] [--counter-disturbance]` | probes NVML and RAPL, measures the GPU counter's update interval, says whether a complete gpu+cpu+dram total is possible here; with `--counter-disturbance` (~30 s) also tests whether reading the counter lowers what it reports |
 | `aep run [opts] -- CMD` | runs CMD with the sampler on; writes `run.json` (whole-program energy), and if the program records spans, attributes them and prints the report |
 | `aep attribute FILE --power power.csv` | joins spans (v2) or events (v1) with the hardware timeline |
 | `aep report DIR_OR_FILE [--format text\|json\|csv]` | readable or structured summary of a v1 or v2 run |
@@ -156,13 +156,13 @@ overhead is a large fraction of the work. Use `gpu=False` (or
 ## Known limitations
 
 1. **NVML counter disturbance (development host).** On WSL2 with driver
-   610.88, every read of the GPU energy counter lowers what it accumulates, for
-   all readers: with the 10 Hz sampler running it reports ~14% less than the
-   board power sensor; with reads every few milliseconds, most of the energy
-   disappears. The research runs this package came from show the same ~13%
-   signature. Until this is characterised on your host, treat GPU figures
-   taken with frequent reads as **lower bounds**. Details:
-   [PROVENANCE](docs/PROVENANCE.md#m31-review-of-m2-findings-recorded-before-any-m3-change).
+   610.88, each read of the GPU energy counter (or of the instantaneous-power
+   field) removes ~10 ms of accumulation from it, for all readers: the 10 Hz
+   sampler lowers the counter ~10–11%, and frequent span reads lower it
+   further. Averaged-power and temperature reads do not. Check your host with
+   `aep validate --counter-disturbance`; where it reports DISTURBED, treat GPU
+   figures taken with frequent reads as **lower bounds**. Details and bare-metal
+   requirements: [docs/NVML_COUNTER_VALIDATION.md](docs/NVML_COUNTER_VALIDATION.md).
 2. **Device-level only.** Concurrent work, other processes and background
    services on the same device are inside every number.
 3. **Counter resolution.** The NVML counter updates every ~100–107 ms (it

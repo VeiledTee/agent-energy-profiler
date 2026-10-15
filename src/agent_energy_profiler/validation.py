@@ -378,6 +378,107 @@ def probe_nvml_resolution(samples=3000, interval=0.001):
 	return result
 
 
+#: Counter-disturbance verdicts.
+DISTURBED = "DISTURBED"
+NOT_DETECTED = "NOT_DETECTED"
+INCONCLUSIVE = "INCONCLUSIVE"
+
+
+def counter_disturbance_verdict(pairs, threshold=0.95):
+	"""Verdict from [(polled_W, endpoints_W, state_changed)] window pairs.
+
+	Pairs whose GPU performance state changed between or during the windows
+	are excluded: the workload, not the reads, changed. DISTURBED needs every
+	valid pair below `threshold` (reads lowered the counter in each
+	comparison); NOT_DETECTED needs every valid pair at or above it.
+	Anything else, or fewer than two valid pairs, is INCONCLUSIVE.
+	"""
+	valid = [p / e for p, e, changed in pairs if not changed and e > 0]
+	result = {"n_pairs": len(pairs), "n_valid": len(valid),
+	          "retained_per_pair": [round(v, 4) for v in valid],
+	          "retained_median": _median(valid) if valid else None,
+	          "threshold": threshold}
+	if len(valid) < 2:
+		result["verdict"] = INCONCLUSIVE
+	elif all(v < threshold for v in valid):
+		result["verdict"] = DISTURBED
+	elif all(v >= threshold for v in valid):
+		result["verdict"] = NOT_DETECTED
+	else:
+		result["verdict"] = INCONCLUSIVE
+	return result
+
+
+def probe_counter_disturbance(pairs=3, window_s=6.0, rest_s=2.0, read_hz=10.0):
+	"""Does reading the energy counter at `read_hz` lower what it reports?
+
+	Alternates two kinds of window on the same device, in pairs: one with no
+	NVML reads between its two endpoint counter reads, one that also reads the
+	counter at `read_hz` (the sampler's rate) in between. Both use identical
+	endpoints, so the ratio of their counter rates isolates the effect of the
+	reads. It does NOT show which of the counter and the power sensor is right.
+	The GPU should be idle or running a steady load. Milestone 4 found this
+	effect on WSL2 (driver 610.88): see docs/NVML_COUNTER_VALIDATION.md.
+	"""
+	result = {"status": UNKNOWN, "method": "paired windows: endpoints-only vs "
+	          f"counter read at {read_hz:g} Hz; identical endpoint reads",
+	          "window_s": window_s, "read_hz": read_hz}
+	try:
+		import pynvml
+		pynvml.nvmlInit()
+		h = pynvml.nvmlDeviceGetHandleByIndex(0)
+		read = pynvml.nvmlDeviceGetTotalEnergyConsumption
+		read(h)
+	except Exception as e:
+		result.update(status=UNAVAILABLE, detail=str(e))
+		return result
+
+	def pstate():
+		try:
+			return pynvml.nvmlDeviceGetPerformanceState(h)
+		except Exception:
+			return None
+
+	def window(polled):
+		s0 = pstate()
+		time.sleep(rest_s)
+		a = time.perf_counter()
+		e0 = read(h)
+		end = a + window_s
+		if polled:
+			nxt = a + 1.0 / read_hz
+			while nxt < end:
+				time.sleep(max(0.0, nxt - time.perf_counter()))
+				read(h)
+				nxt += 1.0 / read_hz
+		time.sleep(max(0.0, end - time.perf_counter()))
+		e1 = read(h)
+		b = time.perf_counter()
+		return (e1 - e0) / 1000.0 / (b - a), s0, pstate()
+
+	raw = []
+	for i in range(pairs):
+		# alternate which window goes first, so drift does not favour one
+		order = (False, True) if i % 2 == 0 else (True, False)
+		got = {polled: window(polled) for polled in order}
+		(w_e, s_e0, s_e1), (w_p, s_p0, s_p1) = got[False], got[True]
+		changed = len({s_e0, s_e1, s_p0, s_p1}) != 1
+		raw.append((w_p, w_e, changed))
+	result.update(counter_disturbance_verdict(raw))
+	result["windows_w"] = [{"polled": round(p, 3), "endpoints_only": round(e, 3),
+	                        "pstate_changed": c} for p, e, c in raw]
+	result["status"] = SUPPORTED
+	result["detail"] = {
+		DISTURBED: "reading the energy counter lowers the energy it reports on this "
+		           "host; GPU energy measured with the sampler running or with "
+		           "frequent span reads is biased low here",
+		NOT_DETECTED: "no effect of counter reads detected at this rate",
+		INCONCLUSIVE: "the paired windows disagree or the GPU changed state; rerun "
+		              "on an idle GPU or a steady load",
+	}[result["verdict"]]
+	return result
+
+
 # --------------------------------------------------------------------------
 # Independent node telemetry
 # --------------------------------------------------------------------------
@@ -521,7 +622,7 @@ def boundary_verdict(nvml, zones):
 
 
 def build_report(settle=0.5, resolution_samples=3000,
-                 consistency_window_s=CONSISTENCY_WINDOW_S):
+                 consistency_window_s=CONSISTENCY_WINDOW_S, counter_disturbance=False):
 	host = probe_host()
 	nvml = probe_nvml(settle=max(settle, 1.0))
 	if nvml.get("cumulative_energy_status") == SUPPORTED and consistency_window_s > 0:
@@ -545,7 +646,7 @@ def build_report(settle=0.5, resolution_samples=3000,
 	# standalone carry "c2-hardware-report/1". Same format, same version --
 	# only the name changed. Historical report artifacts are left untouched, so
 	# a consumer reading old and new reports together should accept both.
-	return {
+	report = {
 		"schema": "hardware-report/1",
 		"generated_at": time.time(),
 		"host": host,
@@ -566,8 +667,18 @@ def build_report(settle=0.5, resolution_samples=3000,
 			"INCONSISTENT and contributes no GPU energy to the boundary.",
 			"Sampled power is a diagnostic plausibility yardstick only. It is never "
 			"reported as measured energy and never substituted for a counter.",
+			"The counter-resolution probe polls the energy counter every ~2 ms. Its "
+			"median update INTERVAL is unaffected, but on hosts where reads disturb "
+			"the counter (see --counter-disturbance) its median update STEP "
+			"understates the true step (Milestone 4).",
 		],
 	}
+	if counter_disturbance:
+		report["gpu_counter_disturbance"] = (
+			probe_counter_disturbance()
+			if nvml.get("cumulative_energy_status") in (SUPPORTED, INCONSISTENT)
+			else {"status": UNAVAILABLE, "detail": "no GPU energy counter"})
+	return report
 
 
 # --------------------------------------------------------------------------
@@ -634,6 +745,17 @@ def render(report):
 		L.append(f"      -> {res['detail']}")
 	else:
 		L.append(f"   counter resolution  {res.get('status')}: {res.get('detail')}")
+	dist = report.get("gpu_counter_disturbance")
+	if dist:
+		if dist.get("status") == SUPPORTED:
+			L.append(f"   counter disturbance {dist['verdict']}: reading at "
+			         f"{dist['read_hz']:g} Hz retains {dist['retained_median']:.3f} of the "
+			         f"read-free counter energy (pairs {dist['retained_per_pair']})"
+			         if dist.get("retained_median") is not None else
+			         f"   counter disturbance {dist['verdict']}")
+			L.append(f"      -> {dist['detail']}")
+		else:
+			L.append(f"   counter disturbance {dist.get('status')}: {dist.get('detail')}")
 	L.append("")
 
 	L.append(f"-- RAPL / CPU zones: {report['rapl_zone_count']} found --")
@@ -686,11 +808,15 @@ def main():
 	                help="seconds spent cross-checking the GPU energy counter "
 	                     "against integrated sampled power (0 disables)")
 	ap.add_argument("--quiet", action="store_true", help="suppress the text report")
+	ap.add_argument("--counter-disturbance", action="store_true",
+	                help="also test (~30 s, idle or steady GPU) whether reading the GPU "
+	                     "energy counter at 10 Hz lowers the energy it reports")
 	args = ap.parse_args()
 
 	report = build_report(settle=args.settle,
 	                      resolution_samples=args.resolution_samples,
-	                      consistency_window_s=args.consistency_window)
+	                      consistency_window_s=args.consistency_window,
+	                      counter_disturbance=args.counter_disturbance)
 	if not args.quiet:
 		print(render(report))
 	if args.json:

@@ -1,0 +1,133 @@
+{
+  "schema": "hardware-report/1",
+  "generated_at": 1792096511.171015,
+  "host": {
+    "hostname": "The-First",
+    "system": "Linux",
+    "release": "5.15.167.4-microsoft-standard-WSL2",
+    "machine": "x86_64",
+    "python": "3.12.3",
+    "environment": "wsl",
+    "cpu_model": "AMD Ryzen 7 7800X3D 8-Core Processor",
+    "bare_metal": false
+  },
+  "gpu": {
+    "status": "SUPPORTED",
+    "devices": [
+      {
+        "index": 0,
+        "name": "NVIDIA GeForce RTX 4090",
+        "power_w": 28.334,
+        "power_status": "SUPPORTED",
+        "energy_mj_first": 1013011637,
+        "energy_status": "SUPPORTED",
+        "energy_mj_second": 1013039753,
+        "energy_delta_mj": 28116,
+        "energy_advancing": true
+      }
+    ],
+    "detail": "1/1 device(s) expose cumulative energy",
+    "driver_version": "610.88",
+    "cumulative_energy_status": "SUPPORTED",
+    "counter_consistency": {
+      "counter_energy_j": 271.295,
+      "sampled_energy_j": 281.78482999866503,
+      "elapsed_s": 10.004703337999672,
+      "n_samples": 194,
+      "counter_avg_power_w": 27.116746077774497,
+      "sampled_avg_power_w": 28.165235937421084,
+      "ratio": 0.9627736170229082,
+      "relative_difference_pct": 3.722638297709182,
+      "difference_j": 10.489829998665016,
+      "tolerance_j": 140.89241499933252,
+      "rel_tol": 0.5,
+      "abs_tol_j": 9.9449,
+      "peak_power_w": 28.414,
+      "verdict": "SUPPORTED",
+      "detail": "counter 271.295 J vs integrated power 281.785 J: 3.7% apart, within tolerance 140.892 J",
+      "device": "NVIDIA GeForce RTX 4090",
+      "method": "cumulative counter vs trapezoidal integral of sampled power"
+    }
+  },
+  "gpu_counter_resolution": {
+    "status": "SUPPORTED",
+    "updates_observed": 80,
+    "median_update_interval_s": 0.10331225395202637,
+    "median_update_step_mj": 155,
+    "detail": "events shorter than the update interval quantize to 0 or one whole step and are not measurable by counter differencing"
+  },
+  "rapl_zones": [],
+  "rapl_zone_count": 0,
+  "boundary": {
+    "domains": {
+      "gpu": {
+        "status": "SUPPORTED",
+        "source": "nvml_total_energy_consumption"
+      },
+      "cpu_package": {
+        "status": "UNAVAILABLE",
+        "source": null
+      },
+      "dram": {
+        "status": "UNAVAILABLE",
+        "source": null
+      }
+    },
+    "available_energy_domains": [
+      "gpu"
+    ],
+    "missing_domains": [
+      "cpu_package",
+      "dram"
+    ],
+    "measurement_complete_possible": false,
+    "detail": "measured_energy_j will be null on this host; missing: cpu_package, dram"
+  },
+  "node_telemetry": {
+    "status": "UNAVAILABLE",
+    "sources": [],
+    "detail": "no IPMI/BMC/Redfish/hwmon power source found; no independent whole-node validation possible"
+  },
+  "notes": [
+    "RAPL core and uncore are diagnostic only and are never added to measured_energy_j; core is contained within package.",
+    "psys is excluded because it is a platform domain that contains package.",
+    "A domain reported UNAVAILABLE must remain null downstream, never zero.",
+    "CodeCarbon is not independent validation: it reads NVML and RAPL itself.",
+    "An advancing GPU energy counter is cross-checked against the integral of sampled board power; a counter that disagrees grossly is reported INCONSISTENT and contributes no GPU energy to the boundary.",
+    "Sampled power is a diagnostic plausibility yardstick only. It is never reported as measured energy and never substituted for a counter."
+  ],
+  "gpu_counter_disturbance": {
+    "status": "SUPPORTED",
+    "method": "paired windows: endpoints-only vs counter read at 10 Hz; identical endpoint reads",
+    "window_s": 6.0,
+    "read_hz": 10.0,
+    "n_pairs": 3,
+    "n_valid": 3,
+    "retained_per_pair": [
+      0.8933,
+      0.889,
+      0.8944
+    ],
+    "retained_median": 0.893294008729663,
+    "threshold": 0.95,
+    "verdict": "DISTURBED",
+    "windows_w": [
+      {
+        "polled": 24.307,
+        "endpoints_only": 27.21,
+        "pstate_changed": false
+      },
+      {
+        "polled": 24.286,
+        "endpoints_only": 27.319,
+        "pstate_changed": false
+      },
+      {
+        "polled": 24.508,
+        "endpoints_only": 27.403,
+        "pstate_changed": false
+      }
+    ],
+    "detail": "reading the energy counter lowers the energy it reports on this host; GPU energy measured with the sampler running or with frequent span reads is biased low here"
+  }
+}

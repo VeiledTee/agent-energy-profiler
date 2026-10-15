@@ -25,7 +25,7 @@ flagged as below the counter's resolution.
 
 **About the GPU numbers in these READMEs.** They were recorded on an RTX 4090
 under WSL2 with the 10 Hz sampler running. On that host, reading the NVML
-energy counter makes it under-report (~14% at 10 Hz, much more with frequent
-span reads; see the main README's Known limitations). Treat the GPU figures
+energy counter makes it under-report (~10–11% at the sampler's 10 Hz, more
+with frequent span reads; see docs/NVML_COUNTER_VALIDATION.md). Treat the GPU figures
 shown as lower bounds that illustrate the report's structure, not as
 reference values.

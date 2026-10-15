@@ -569,7 +569,11 @@ each detection lags an update by up to ~2 ms; the lag cancels in the median
 (stock 102.3–103.2 ms vs tight loop 102.2 ms) but widens the spread.
 
 **CRITICAL: reading the NVML energy counter makes it under-report (this
-host, WSL2, driver 610.88).** Measured 2026-10-15 with
+host, WSL2, driver 610.88).** *(Investigated in Milestone 4 with a
+controlled experiment; see [NVML_COUNTER_VALIDATION.md](NVML_COUNTER_VALIDATION.md).
+M4 refines this preliminary account: power reads via `GetPowerUsage` do not
+disturb the counter, the instantaneous-power field does, and the "no polling"
+row below still read power at 4 Hz.)* Measured 2026-10-15 with
 `nvmlDeviceGetTotalEnergyConsumption` against `nvmlDeviceGetPowerUsage`:
 
 | Energy reads | counter ÷ board power, idle (~28 W) | under 8192² matmul load (~426 W) |
@@ -740,6 +744,41 @@ material.
 - Schema-v2 items 3–6 of M3.1 (sampled per-span GPU when in-band reading is
   off; sampling period as a second resolution limit) remain open.
 
+## Milestone 4: GPU energy measurement validation
+
+Full write-up: [NVML_COUNTER_VALIDATION.md](NVML_COUNTER_VALIDATION.md).
+Tools: `tools/nvml_diagnostics/`. Raw data and summaries: `results/nvml_m4/`.
+
+- **Finding (WSL2, RTX 4090, driver 610.88).** Each read of the energy counter
+  (either API) or of the instantaneous-power field lowers the counter's
+  accumulation by ~9–11 ms of energy, for all readers, at 27, 254 and 431 W.
+  `GetPowerUsage` and temperature reads do not. The 10 Hz sampler retains
+  0.886–0.903 of read-free counter energy. Undisturbed counter and integrated
+  `GetPowerUsage` differ by 2–4%; which is right is unknown.
+- **The M3 contradiction** is consistent with `GetPowerUsage` being a
+  trailing average: right after an idle → load step, counter ÷ integrated
+  power is 1.03–1.06.
+- **Frozen runs** (read-only): their 0.864–0.876 matches the sampler-level
+  effect; the in-band per-read effect in them is ~7× weaker than the current
+  driver predicts. Historical figures are unchanged; the implication is
+  qualified in the write-up (section 5).
+- **`validation.probe_nvml_resolution`'s median step** is itself disturbed
+  (the probe polls every ~2 ms); a note in the hardware report says so. The
+  interval is unaffected.
+- **Added.** `aep validate --counter-disturbance` (opt-in, ~30 s): paired
+  read-free vs 10 Hz windows, P-state-checked; verdict DISTURBED /
+  NOT_DETECTED / INCONCLUSIVE. On this host: DISTURBED, 0.893.
+- **Not changed.** Sampler, `Session`, attribution and report behaviour,
+  schema, golden fixtures. Recommendations for the measurement architecture
+  are in section 8 of the write-up, pending a decision.
+- **Tests.** `tests/test_nvml_diagnostics.py`: trial scheduling with a fake GPU
+  (equal windows, no backlog), statistics, verdict logic, and the probe
+  against fake counters that do and do not lose energy per read.
+- **Safety.** Workloads are ordinary matmul within the board's power limit;
+  the experiment aborts at 83 °C (maximum observed 79 °C). PyTorch was
+  installed into a throwaway venv under `build/` with no pip cache, and
+  removed afterwards.
+
 ## Remaining references to the research repository
 
 The research repository is not a dependency: no code imports it, no test
@@ -769,3 +808,4 @@ schema v1 and generic in role. Renaming them is a schema-v2 decision.
 | 0.1.0 + M1 (version not bumped) | Partial multi-device sums become `null` (M1.1). RAPL unwrapped per counter from `max_energy_range_uj` via the new `<power.csv>.meta.json` sidecar; unresolvable decreases and negative differences become `null`; `RAPL_MAX` removed (M1.2). Interrupted spans recorded `cancelled` (M1.3). No hardware access at import; `sampling.init()`, `nvml.shutdown()` (M1.4). Columns filtered once per attribution call (M1.5). | identical: all four fixtures byte for byte, and the three frozen runs |
 | 0.2.0 (M2) | Additive schema v2: `Session`, `measurement`, `schema_v2`, `accounting`, `attribution_v2` (`aep-attribute-v2`), `sampling.Sampler`, v1 → v2 reader. `attribution.counter_window` factored out of `rapl_delta_prepared` (same arithmetic). No v1 behaviour change. | identical: all four fixtures byte for byte, and the three frozen runs |
 | 0.2.0 + M3 (version not bumped) | Streaming v2 attribution (same output, ~5–9× less memory); `report.py`; `aep` CLI and `Session.from_env`; examples; `test` extra; v2 golden fixture from M2. No v1 or v2 output change. NVML counter-disturbance finding documented, not corrected. | identical: v1 fixtures, frozen runs, and the v2 fixture |
+| 0.2.0 + M4 (version not bumped) | NVML counter validation: diagnostics in `tools/nvml_diagnostics/`, raw results in `results/nvml_m4/`, `docs/NVML_COUNTER_VALIDATION.md`, opt-in `aep validate --counter-disturbance`, a note on the resolution probe's step. No measurement behaviour changed. | identical: v1 fixtures, frozen runs, and the v2 fixture |

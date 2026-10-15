@@ -1,0 +1,6 @@
+usage: experiment.py [-h] --workload {idle,steady,pulsed}
+                     [--workload-python WORKLOAD_PYTHON] --out OUT
+                     [--device DEVICE] [--duration DURATION] [--rest REST]
+                     [--reps REPS] [--warmup WARMUP] [--seed SEED]
+                     [--max-temp MAX_TEMP] [--conditions CONDITIONS]
+experiment.py: error: argument --workload: invalid choice: ' --workload-python' (choose from 'idle', 'steady', 'pulsed')
