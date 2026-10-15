@@ -534,6 +534,212 @@ spread over JSON I/O (~7 s), accounting (~11 s) and window lookups (~4.5 s).
 - **Accounting assumes one clock per file.** Spans are compared on the
   monotonic clock of one process; upgraded v1 events use the wall clock.
 
+## Milestone 3: developer usability, reporting and performance
+
+### M3.1 Review of M2 (findings recorded before any M3 change)
+
+Baseline: `baf6108`, 417 passed, 9 skipped. The uncommitted `CLAUDE.md`
+change is the owner's "Project Isolation" section (12 added lines, nothing
+removed); it is preserved verbatim and committed with M3.
+
+**GPU counter update interval (100.6 vs 106 ms).** The figure is not a
+constant of the hardware. Evidence, all from the same RTX 4090:
+
+| Source | Driver | Median interval | Notes |
+|---|---|---|---|
+| research spec / ROADMAP | 591.86 | 106.1–107.1 ms | six `validate_hardware.py` runs, ~80 updates each |
+| research `measurement/hardware_report.json` | 591.86 | 99.97 ms | one report, 66 updates, median step 331 mJ (a loaded GPU) |
+| this repository, 2026-10-15, tight loop (no sleep, 15 s) | 610.88 | 102.2 ms | 146 intervals, p05–p95 101.5–102.8 ms |
+| this repository, 2026-10-15, `probe_nvml_resolution` ×3 | 610.88 | 102.3, 103.2, 102.7 ms | ~83 updates each |
+| this repository, 2026-10-15, under sustained GPU load (8192² matmul loop) | 610.88 | 102.4 ms tight loop; 102.4–102.6 ms stock ×3 | interval unchanged under load |
+
+The value 100.6 ms does not appear in the research repository (searched
+read-only); it is within the 100–107 ms range observed. Load does not move
+the interval on driver 610.88 (idle 102.2 ms, loaded 102.4 ms), so load is
+not the explanation for the 99.97 ms report either; the observed spread
+tracks time and driver version, which could not be separated with the data
+available. Within one run the
+interval is tight (±0.7 ms), but between runs it moved by ~7 ms, the driver
+has changed since extraction (591.86 → 610.88), and the one loaded-GPU
+report is the shortest. Conclusion: the interval must be characterised per
+host, per driver and ideally under the workload's own load, then recorded with
+its provenance. That is how `Resolution` already works; no default value is
+added. The stock probe polls with `sleep(0.001)` plus a ~0.7–1.2 ms read, so
+each detection lags an update by up to ~2 ms; the lag cancels in the median
+(stock 102.3–103.2 ms vs tight loop 102.2 ms) but widens the spread.
+
+**CRITICAL: reading the NVML energy counter makes it under-report (this
+host, WSL2, driver 610.88).** Measured 2026-10-15 with
+`nvmlDeviceGetTotalEnergyConsumption` against `nvmlDeviceGetPowerUsage`:
+
+| Energy reads | counter ÷ board power, idle (~28 W) | under 8192² matmul load (~426 W) |
+|---|---|---|
+| none (start/end only) | 0.97 | 0.97 |
+| every 1 s | 0.96 | 0.97 |
+| every 100 ms | 0.87 | 0.87 |
+| every 20 ms | 0.40 | 0.42 |
+| every 1 ms | 0.06 | 0.06 |
+| back to back | 0.02 | 0.02 |
+
+- The effect is global: while one process polls, a second process reading
+  only at start and end sees the same deficit (0.77 W vs 30 W).
+- The real `aep sample` at 10 Hz depresses every reader to 0.85 (idle) and
+  0.86 (load); without it the same reader sees 0.97.
+- The frozen research runs carry the same signature: whole-log counter power
+  ÷ mean sampled power is 0.866 (CoR), 0.864 (PoG), 0.876 (ToG), and their
+  recorded `sampled_vs_counter_ratio` medians are 1.150, 1.149, 1.141, i.e.
+  ≈ 1/0.87. Those runs used driver 591.86 and a 10 Hz sampler, plus in-band
+  reads at every event boundary. This is consistent with the counter having
+  been under-read by roughly 13% or more in those runs, but it is not proof:
+  the board-power reading has not been validated independently.
+- Not yet explained: in the M3 GPU example the in-band counter (516 J) was
+  *above* integrated sampled power (499 J) with the sampler running.
+- Consequences if confirmed: every GPU figure taken while the sampler runs or
+  while spans read the counter frequently is biased low, increasingly so for
+  short, frequent spans; the per-span "below resolution" zeros are partly this
+  effect. This needs an external reference (a wall-power or PCIe-rail meter)
+  before any correction is designed. No code was changed for it.
+
+**NVML instrumentation overhead.** One `nvmlDeviceGetTotalEnergyConsumption`
+call costs 0.69 ms median when isolated (p90 0.82 ms, max 15 ms) and
+1.15 ms when calls run back to back on this WSL2 host; a power read costs
+0.14 ms. M2's 2.5 ms/span came from empty spans, i.e. back-to-back reads.
+With work inside the span, a Session adds a median 1.7–2.2 ms per span
+(p90 ~8.4 ms) with NVML, versus 0.013–0.044 ms without. The reads lie outside
+`duration_s`, so durations are not inflated, but the workload is: a 10 ms
+operation runs ~20% longer end to end, and the read calls' own energy falls
+partly inside the counter window. Below ~20 ms the overhead is a material
+fraction of the operation.
+
+**Peak memory of v2 attribution (2.2 GB at 230k events).** Stage by stage on
+the ToG run: timeline 116 MB; reading and upgrading 230k records 998 MB (~3.8
+KB of Python objects per span); attribution plus accounting 2,135 MB. Every
+span is held twice (shallow copies in `attribute_spans` and `annotate`), with
+~25 small nested dicts each, and deleting the input frees nothing because the
+copies share nested objects. Before: nested 230k 20.7 s / 2.43 GB; ToG 21.5 s /
+2.24 GB (v1 ToG: 7.3 s / 1.29 GB).
+
+**Wheel-environment failures.**
+`test_package_under_test_is_this_repository` asserts the package is imported
+from `src/`; it is meaningless for an installed wheel and should skip there
+explicitly instead of failing. `test_numpy_and_pandas_keep_nan` imports numpy
+and pandas, which no extra declares; it should skip when they are absent, and
+the full test environment should be declared as an extra.
+
+**Schema-v2 review.** No correctness defect found in the recorded values.
+Ambiguities and gaps:
+
+1. `status` means different things at five levels: span (`ok`/`error`/...),
+   domain (`measured`/`unavailable`/`invalid`), exclusive (adds
+   `not_defensible`), total (`measured`/`incomplete`), estimate
+   (`estimated`/`unavailable`). Valid but easy to misread; documented in one
+   table rather than renamed (renaming would break v2 files).
+2. `attribution: "sole"` means sole among *recorded* spans. Un-instrumented
+   work, other processes and a model server's background activity are
+   invisible to it. The wording in SCHEMA_V2.md is tightened.
+3. With in-band GPU reading off but a sampler running, a span's `energy.gpu`
+   is unavailable even though the sampled GPU counter could be differenced
+   over its window (as RAPL is). A design gap, not an error; deferred.
+4. `below_resolution` on a `sampled_counter_interpolated` value uses the NVML
+   interval only; the sampling period (100 ms at 10 Hz) is a second
+   resolution limit. Today this affects only the long session window.
+5. `total.below_resolution` is `null` whenever RAPL is measured (RAPL
+   resolution unknown), so on full-boundary hosts it is almost always null.
+   Correct, but it should be explained to readers.
+6. `duration_s` excludes the read calls while the counter window includes part
+   of them, so `update_intervals` slightly understates the window.
+7. Upgraded v1 records use v1 `run_id` as `session_id`, have empty `raw`, and
+   wall-clock durations. Documented in SCHEMA_V2.md, unchanged.
+
+### M3.2 Implementation decisions
+
+- **Streaming v2 attribution (memory).** `accounting.Index` keeps only a
+  compact per-span node (ids, window, measured values, raw mJ deltas);
+  `SummaryBuilder` aggregates one span at a time; `attribution_v2.attribute_file`
+  makes two passes over the input (pass 1 builds the index and checks
+  coverage before anything is written; pass 2 recomputes each span, adds its
+  accounting and writes it). Same rules, key order and arithmetic as M2:
+  output is byte-identical on both 230k runs and on the new
+  `tests/golden_v2/session_mixed` fixture, whose expected files were produced
+  by the M2 code (`baf6108`) via `tools/build_v2_fixture.py`. The in-memory
+  `attribute_spans` / `annotate` / `summarize` API is kept.
+- **Reporting (`report.py`).** One accumulator for both schemas: v1 events
+  pass through `schema_v2.upgrade_v1`, so a v1 power-integration value is an
+  estimate exactly as in v2. Totals add top-level spans only (v2 roots; every
+  v1 event) and are refused when those overlap. A total appears only when
+  every contributing span is measured; the partial sum is shown separately
+  with its coverage. Per-operation energy is v2 exclusive energy, v1 per-event
+  energy. Estimates are reported only for spans with no counter measurement;
+  where both exist the report prints an estimate-vs-counter line marked
+  diagnostic. Reads files line by line. v1 numerical semantics are preserved:
+  for every operation, measured + estimated GPU equals v1's
+  `energy_summary.csv` value as printed (tested on the synthetic and CoR
+  fixtures).
+- **CLI (`cli.py`, `aep`).** `validate`, `sample`, `run`, `attribute`,
+  `report`, `export`. `aep run` measures the whole program (in-band GPU reads
+  before and after, sampler window) and attributes spans only if the program
+  wrote them through `Session.from_env()`; it says so when it did not. v1
+  input to `aep attribute` uses the unchanged v1 pipeline unless
+  `--schema 2`.
+- **Examples.** CPU-only, GPU inference (PyTorch; synthetic decoder by
+  default, optional Hugging Face model) and an agent loop, all without paid
+  APIs. Run on the development host; outputs in their READMEs carry the
+  counter-disturbance caveat.
+- **Test dependencies.** New `test` extra (`pytest`, `matplotlib`, `numpy`,
+  `pandas`); numpy/pandas tests skip without them; the repository-path test
+  checks the opposite (installed from `site-packages`) under
+  `AEP_TEST_INSTALLED=1`.
+
+### M3.3 Performance (development host, WSL2, Python 3.12.3)
+
+| | Before (M2) | After (M3) |
+|---|---|---|
+| v2 attribution, nested 230k spans | 20.7 s, 2.43 GB peak RSS | 21.0 s, 0.27 GB |
+| v2 attribution, ToG frozen run (230,042 events) | 21.5 s, 2.24 GB | 19.4 s, 0.46 GB |
+| v1 attribution, ToG (unchanged code) | 7.3 s, 1.29 GB | unchanged |
+| Span overhead, no GPU reading | 13–44 µs | unchanged |
+| Span overhead, NVML (median / p90) | 1.7–2.2 ms / ~8.4 ms | unchanged |
+
+Attribution does not touch the GPU, so its cost is the same with or without
+one. Without NVML (`gpu=False`) a span costs tens of microseconds; with it,
+two NVML reads dominate (0.69 ms each in isolation, 1.15 ms back to back on
+this host). The reads are outside `duration_s`, so durations are not
+inflated, but the workload is, and on this host the reads also depress the
+counter itself (M3.1). For operations shorter than ~20 ms both effects are
+material.
+
+### M3.4 Validation
+
+- Full suite: 443 passed, 9 skipped (8 need frozen research data, 1 is the
+  opt-in real-NVML test).
+- Frozen runs (`pytest -m frozen_runs`, data read only): all three
+  re-attribute through v1 exactly as before.
+- Golden fixtures: the four v1 cases byte-identical; the new v2 case
+  byte-identical to M2. Nothing regenerated.
+- Wheel 0.2.0 in two fresh venvs: minimal (no `pynvml`, no optional
+  packages) 358 passed, 58 skipped; with `[test]` 407 passed, 9 skipped. The
+  installed `aep` ran `validate`, `run` (agent and CPU examples, GPU absent)
+  and `export` successfully.
+- Finding while validating: with `TMPDIR` inside a git working tree,
+  `test_not_a_repository_is_unknown_not_clean` fails, correctly, because the
+  temporary directory then *is* inside a repository. Documented in the README.
+- The research repository was only read (frozen runs, the hardware report,
+  a text search), never written.
+- PyTorch for the GPU example was installed into a throwaway venv under the
+  git-ignored `build/`, with the pip cache disabled and `TMPDIR` inside the
+  repository; it was deleted afterwards.
+
+### M3.5 Unresolved after M3
+
+- **NVML counter disturbance** (M3.1): needs an external power reference, a
+  check on bare metal and other drivers, and a decision on how the sampler
+  and in-band reads should behave (e.g. a lower read rate, a disturbance
+  probe in `aep validate`). The research runs' GPU energies may be ~13% low.
+- The GPU example's counter (516 J) above integrated power (499 J) with the
+  sampler running does not fit the disturbance pattern and is unexplained.
+- Schema-v2 items 3–6 of M3.1 (sampled per-span GPU when in-band reading is
+  off; sampling period as a second resolution limit) remain open.
+
 ## Remaining references to the research repository
 
 The research repository is not a dependency: no code imports it, no test
@@ -562,3 +768,4 @@ schema v1 and generic in role. Renaming them is a schema-v2 decision.
 | 0.1.0 | Initial extraction; no behaviour change | identical |
 | 0.1.0 + M1 (version not bumped) | Partial multi-device sums become `null` (M1.1). RAPL unwrapped per counter from `max_energy_range_uj` via the new `<power.csv>.meta.json` sidecar; unresolvable decreases and negative differences become `null`; `RAPL_MAX` removed (M1.2). Interrupted spans recorded `cancelled` (M1.3). No hardware access at import; `sampling.init()`, `nvml.shutdown()` (M1.4). Columns filtered once per attribution call (M1.5). | identical: all four fixtures byte for byte, and the three frozen runs |
 | 0.2.0 (M2) | Additive schema v2: `Session`, `measurement`, `schema_v2`, `accounting`, `attribution_v2` (`aep-attribute-v2`), `sampling.Sampler`, v1 → v2 reader. `attribution.counter_window` factored out of `rapl_delta_prepared` (same arithmetic). No v1 behaviour change. | identical: all four fixtures byte for byte, and the three frozen runs |
+| 0.2.0 + M3 (version not bumped) | Streaming v2 attribution (same output, ~5–9× less memory); `report.py`; `aep` CLI and `Session.from_env`; examples; `test` extra; v2 golden fixture from M2. No v1 or v2 output change. NVML counter-disturbance finding documented, not corrected. | identical: v1 fixtures, frozen runs, and the v2 fixture |

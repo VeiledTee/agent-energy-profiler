@@ -70,6 +70,8 @@ _SUBMODULES = frozenset({
 	"schema", "trajectory", "visualize",
 	# schema v2 (Milestone 2)
 	"accounting", "attribution_v2", "measurement", "schema_v2", "session",
+	# reporting and CLI (Milestone 3)
+	"cli", "report",
 })
 
 #: Values re-exported from submodules, resolved the same way.
@@ -86,7 +88,7 @@ __all__ = [
 	"schema", "trajectory", "visualize", "span", "SCHEMA_VERSION", "Status",
 	"__version__",
 	"accounting", "attribution_v2", "measurement", "schema_v2", "session",
-	"Session", "Resolution",
+	"Session", "Resolution", "cli", "report",
 ]
 
 

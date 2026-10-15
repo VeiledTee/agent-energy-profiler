@@ -202,6 +202,38 @@ class Session:
 		self.n_foreign_process_writes_refused = 0
 		self.sampler_exit_code = None
 
+	#: Environment variables set by `aep run` for the profiled program.
+	ENV_SPANS_FILE = "AEP_SPANS_FILE"
+	ENV_RESOLUTION = "AEP_RESOLUTION"
+	ENV_GPU = "AEP_GPU"
+	ENV_ATTRIBUTES = "AEP_RUN_ATTRIBUTES"
+
+	@classmethod
+	def from_env(cls, default_path=None, *, attributes=None, **kwargs):
+		"""A Session configured by `aep run`, or by `default_path` when the
+		program runs on its own.
+
+		Reads AEP_SPANS_FILE (output path), AEP_RESOLUTION (a Resolution as
+		JSON), AEP_GPU ("auto" or "off") and AEP_RUN_ATTRIBUTES (JSON object,
+		merged under `attributes`). Keyword arguments override the environment.
+		The sampler is not started here: under `aep run` it belongs to the
+		parent process, which brackets the whole program with it.
+		"""
+		path = os.environ.get(cls.ENV_SPANS_FILE) or default_path
+		if not path:
+			raise RuntimeError(f"no output path: set {cls.ENV_SPANS_FILE} (as `aep run` "
+			                   f"does) or pass default_path")
+		if "resolution" not in kwargs and os.environ.get(cls.ENV_RESOLUTION):
+			kwargs["resolution"] = m.Resolution.from_dict(
+				json.loads(os.environ[cls.ENV_RESOLUTION]))
+		if "gpu" not in kwargs and os.environ.get(cls.ENV_GPU):
+			kwargs["gpu"] = False if os.environ[cls.ENV_GPU] == "off" else "auto"
+		merged = {}
+		if os.environ.get(cls.ENV_ATTRIBUTES):
+			merged.update(json.loads(os.environ[cls.ENV_ATTRIBUTES]))
+		merged.update(attributes or {})
+		return cls(path, attributes=merged, **kwargs)
+
 	# -- lifecycle --------------------------------------------------------
 
 	def start(self):

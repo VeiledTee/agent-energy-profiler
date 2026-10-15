@@ -22,10 +22,14 @@ dependencies = []
 gpu = ["nvidia-ml-py>=12.535"]
 # Figures (agent_energy_profiler.visualize). Imported only when drawing.
 plot = ["matplotlib>=3.5"]
-# Test suite.
+# Test runner only: the suite passes, skipping optional-dependency tests.
 dev = ["pytest>=8"]
+# The full suite with no optional-dependency skips (figures, numpy/pandas
+# interop). Core never imports these.
+test = ["pytest>=8", "matplotlib>=3.5", "numpy", "pandas"]
 
 [project.scripts]
+aep = "agent_energy_profiler.cli:main"
 aep-sample = "agent_energy_profiler.sampling:main"
 aep-attribute = "agent_energy_profiler.attribution:main"
 aep-attribute-v2 = "agent_energy_profiler.attribution_v2:main"

@@ -1,0 +1,11 @@
+{
+  "case": "session_mixed",
+  "note": "session_summary.json stored with input/power_file paths nulled and keys sorted",
+  "reference_src": "commit baf6108 (Milestone 2)",
+  "sha256": {
+    "expected/session_summary.json": "960f0fcda89d745078937d53e552624a22454055cf16244f41e9b9e0d9fdb95d",
+    "expected/spans_attributed.jsonl": "3a0412e5e551e14d6783174c4dd32ef936a62da1445b6f9366b40696d37d4a6a",
+    "input/power.csv": "1cd23558cbe5ce430006ea3c82c8869f3d4829acd46ccea2f0e1f1ddc99ca31e",
+    "input/spans.jsonl": "0f0b493fd845defe79702b15f5b80f25e3fd4ec032abd045e41013737ebe2f9d"
+  }
+}

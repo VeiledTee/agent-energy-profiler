@@ -25,7 +25,12 @@ class JToWh(unittest.TestCase):
 		self.assertEqual(visualize.j_to_wh(x for x in (3600.0,)), [1.0])
 
 	def test_numpy_and_pandas_keep_nan(self):
-		import numpy as np
+		# numpy/pandas are optional (the `test` extra installs them); the core
+		# package never imports them.
+		try:
+			import numpy as np
+		except ImportError:
+			self.skipTest("numpy not installed (pip install '.[test]')")
 		arr = visualize.j_to_wh(np.array([3600.0, np.nan]))
 		self.assertEqual(arr[0], 1.0)
 		self.assertTrue(math.isnan(arr[1]))

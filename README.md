@@ -1,206 +1,202 @@
 # agent-energy-profiler
 
-Hardware-grounded, operation-level energy profiling for agentic AI systems.
+Hardware-grounded, operation-level energy profiling for Python AI agents and
+other multi-step programs.
 
-A host application labels spans of work (`llm:plan`, `tool:search`, …). The
-profiler records them on a semantic timeline. A separate sampler records
-hardware energy counters (NVIDIA NVML, Linux RAPL), and an attribution step
-joins the two. The profiler never infers what an operation is: the label comes
-from the caller that knows why the work is happening.
+You mark the steps of your program as spans (`llm:plan`, `tool:search`,
+`verify:check`, …). The profiler reads hardware energy counters (NVIDIA NVML
+for GPUs, Linux RAPL for CPU package and DRAM) and reports how much energy
+the device used during each span, how long each step took, and how confident
+you can be in each number.
 
-> **Status: 0.2.0.** Extracted from a PhD research codebase (see
-> [docs/PROVENANCE.md](docs/PROVENANCE.md)). Milestone 1 fixed measurement
-> defects; Milestone 2 added schema v2: the `Session` API, nested spans,
-> explicit energy provenance and resolution awareness. Schema v1 and its
-> functional API are unchanged, and the golden tests show the research runs
-> still attribute byte for byte as before. The API may still change.
+> **Status: 0.2.0, research-grade.** Extracted from a PhD research codebase
+> ([docs/PROVENANCE.md](docs/PROVENANCE.md)). Measurements are validated
+> against golden research artifacts, but read
+> [Known limitations](#known-limitations) before relying on GPU figures:
+> on the development host, reading the NVML energy counter frequently makes
+> it under-report.
+
+## What it measures, and what it does not
+
+| Measures | Does not measure |
+|---|---|
+| Whole-**device** energy from hardware counters: NVIDIA GPU (NVML), CPU package and DRAM (RAPL) | Energy of one process, thread or request on a shared device |
+| Energy over each span's time window, attributed by time | Which code inside a span used the energy |
+| Inclusive and exclusive (children removed) energy of nested spans | A split of energy between spans that ran at the same time |
+| Latency of every span; whole-program energy under `aep run` | What an uninstrumented program was doing internally |
+| Integrated sampled power, as a labelled **estimate** | Storage, network, fans, PSU losses, facility overhead, carbon (unless you convert with your own grid intensity, `carbon.py`) |
+
+Energy is reported in joules. A missing measurement is `null`, never 0.
 
 ## Install
 
+Not on PyPI yet. From a clone or a built wheel:
+
 ```bash
 python -m venv .venv
-.venv/bin/pip install -e '.[dev]'          # core has no runtime dependencies
-.venv/bin/pip install -e '.[gpu,plot]'     # NVML GPU counters, figures
+.venv/bin/pip install /path/to/agent-energy-profiler          # core: no dependencies
+.venv/bin/pip install '/path/to/agent-energy-profiler[gpu]'   # + NVIDIA GPU counters (nvidia-ml-py)
+.venv/bin/pip install '/path/to/agent-energy-profiler[plot]'  # + figures (matplotlib)
+.venv/bin/pip install -e '.[test]'                            # development: full test suite
 ```
 
-To reproduce the exact environment used for baseline equivalence:
+Python 3.9 or later.
 
-```bash
-.venv/bin/pip install -e '.[dev,plot,gpu]' pandas -c constraints/baseline.txt
-```
+**Supported hardware.** Anything works; what gets measured depends on the
+host. `aep validate` tells you exactly.
 
-## Use: the Session API (schema v2)
-
-```python
-from agent_energy_profiler import Session, Resolution
-from agent_energy_profiler.sampling import Sampler
-
-resolution = Resolution.from_hardware_report("hw.json")   # from `aep-validate --json hw.json`
-
-with Session("spans.jsonl",
-             resolution=resolution,                        # unknown if omitted
-             sampler=Sampler("power.csv", hz=10),          # optional: CPU/DRAM timeline
-             attributes={"run_id": "run-1", "model": "gemma-3-4b"}) as session:
-
-    with session.span("agent:step", attributes={"question_id": "q-17"}):
-        with session.span("llm:plan") as s:                # child of agent:step
-            response = client.generate(prompt)
-            s.set_tokens(input=response.usage.prompt_tokens,
-                         output=response.usage.completion_tokens)
-
-        @session.trace("tool:search")                      # label is required
-        async def search(query): ...
-```
-
-```bash
-aep-attribute-v2 --spans spans.jsonl --power power.csv --out-dir out/
-# -> out/spans_attributed.jsonl, out/session_summary.json
-```
-
-- **Explicit sessions.** There is no global default session. Each span belongs
-  to the session that created it and writes to that session's file. A file
-  that already exists is refused unless `overwrite=True`.
-- **Nesting.** Parents come from the current task or thread context
-  (contextvars). asyncio tasks inherit the span that created them; a new
-  thread starts without a parent unless you pass `parent=handle`.
-- **Lifecycle.** `with Session(...)` (or `async with`) starts GPU reading and
-  the optional sampler process, and always closes both, also on exceptions.
-  The sampler starts before the first span and takes one more sample after the
-  last, so the timeline brackets every span.
-- **Status.** `ok`, `error` (an exception), `cancelled` (`KeyboardInterrupt`,
-  asyncio cancellation) or one you set (`s.set_status("timeout")`). The
-  workload's exceptions always propagate unchanged.
-- **GPU.** `gpu="auto"` reads NVML if present, `gpu=False` disables it, or pass
-  a reader (`measurement.CallableReader`). Without a GPU every span records GPU
-  energy as `unavailable` (`no_counter` / `disabled`), never 0.
-
-Field definitions: [docs/SCHEMA_V2.md](docs/SCHEMA_V2.md).
-
-## Measured, below resolution, missing, estimated
-
-| | v2 field | Means |
+| Host | GPU | CPU package / DRAM |
 |---|---|---|
-| Measured | `energy.<domain>.energy_j`, `status: "measured"` | a hardware counter difference over the span's window |
-| Below resolution | same, plus `below_resolution: true` | still the counter difference, unchanged; the span was shorter than the counter's characterised update interval, so it is quantised (often exactly 0 J) and biased low |
-| Missing | `energy_j: null`, `status: "unavailable"` / `"invalid"`, `reason` | no defensible counter difference; never 0 |
-| Estimated | `estimates.<domain>` only | integrated sampled power; never in `energy`, never in `total` |
+| Linux, bare metal, NVIDIA GPU (Volta or newer) | measured | measured if `/sys/class/powercap` (Intel or AMD RAPL) or `amd_energy` is readable |
+| WSL2 with an NVIDIA GPU | measured (see limitations) | not available (no RAPL in WSL2) |
+| VMs, most containers, shared HPC nodes | often available | usually not available |
+| No NVIDIA GPU | not available | as above |
+| macOS, Windows native | not supported | not supported |
 
-A measured `0.0` is not "no energy was used". `below_resolution` is `null`
-when no update interval was characterised for the host, and
-`update_intervals` (duration ÷ interval) is recorded so analysis can pick its
-own cut-off: the median interval is not a guaranteed minimum measurable
-duration.
-
-## Nested spans and concurrency
-
-- **Inclusive** energy is the device's energy over a span's window.
-  **Exclusive** energy (`accounting.exclusive`) is inclusive minus the direct
-  children's, reported only when the span is `sole` (nothing outside its own
-  subtree overlapped it), its children ran one after another inside it, and
-  all of them were measured. Otherwise it is `not_defensible` or `unavailable`,
-  with a reason.
-- Summary totals add **root** spans only, so a parent and its child are never
-  counted twice. If root spans overlap (concurrent tasks, threads), there is no
-  span-based total; the independent whole-window counter reading in
-  `session_summary.json` is the total.
-- Concurrent spans are marked `shared`: their inclusive energy is reported, but
-  it includes the other work. Energy is never split between concurrent spans.
-- Two `Session`s active at once in one process record independently, but their
-  spans are marked `other_sessions_active`: the device cannot tell their work
-  apart.
-- **Multiprocessing is not supported** for attribution across processes.
-  Each process needs its own `Session` and file; a forked child refuses to
-  write through the parent's session. Nothing links or separates device energy
-  across processes.
-
-## Legacy functional API (schema v1)
-
-Unchanged, and still the writer used for the existing research runs:
+## Minimal example
 
 ```python
-from agent_energy_profiler import profiler
+from agent_energy_profiler import Session
 
-profiler.configure(events_file="events.jsonl", run_id="run-1")
-profiler.set_question("task-17")            # trajectory grouping key (schema v1 name)
-
-with profiler.span("llm:plan") as s:
-    response = client.generate(prompt)
-    s["input_tokens"] = response.usage.prompt_tokens
-    s["output_tokens"] = response.usage.completion_tokens
+with Session.from_env("spans.jsonl") as session:          # `aep run` sets the path
+    with session.span("agent:question", attributes={"id": "q1"}):
+        with session.span("retrieval:search"):
+            docs = search(query)
+        with session.span("llm:reason") as s:
+            answer = llm(query, docs)
+            s.set_tokens(input=812, output=64)
 ```
 
 ```bash
-aep-validate                                  # what can this host measure?
-aep-sample --out power.csv --hz 10 &          # hardware timeline + power.csv.meta.json (Ctrl-C / SIGTERM to stop)
-python my_agent.py                            # writes events.jsonl
-aep-attribute --events events.jsonl --power power.csv --out energy_summary.csv
-aep-aggregate --help                          # long-format rollups
-aep-visualize --help                          # standard figures (needs [plot])
+aep validate --json hw.json                               # once per machine
+aep run --resolution-report hw.json --out-dir runs/demo -- python my_agent.py
 ```
 
-Outputs: `events_attributed.jsonl`, `energy_summary.csv` and
-`trajectory_summary.{csv,json}`. The v1 recorder keeps process-global state
-(see PROVENANCE, limitation 9); use `Session` for threads, asyncio or several
-experiments in one process.
+`aep run` starts the hardware sampler, runs the program, attributes its spans
+and prints a report. Three complete examples (CPU-only, GPU inference, an
+agent loop) are in [examples/](examples/).
 
-## Migrating from v1 to v2
+## CLI
+
+| Command | Does |
+|---|---|
+| `aep validate [--json hw.json]` | probes NVML and RAPL, measures the GPU counter's update interval, says whether a complete gpu+cpu+dram total is possible here |
+| `aep run [opts] -- CMD` | runs CMD with the sampler on; writes `run.json` (whole-program energy), and if the program records spans, attributes them and prints the report |
+| `aep attribute FILE --power power.csv` | joins spans (v2) or events (v1) with the hardware timeline |
+| `aep report DIR_OR_FILE [--format text\|json\|csv]` | readable or structured summary of a v1 or v2 run |
+| `aep export DIR_OR_FILE --out-dir D` | `spans.csv` (one row per span), `operations.csv`, `report.json` |
+| `aep sample --out power.csv` | the sampler on its own |
+
+`python -m agent_energy_profiler …` is equivalent to `aep …`.
+
+**`aep run` does not look inside your program.** Without spans it reports
+only whole-program energy (`run.json`). Operation-level numbers exist only
+for the spans the program records through the SDK.
+
+## Interpreting the numbers
+
+The report separates four kinds of value:
+
+| Kind | Where | Meaning |
+|---|---|---|
+| **Measured** | "MEASURED ENERGY", `energy.*` | a hardware counter difference over the span's window |
+| **Below resolution** | measured, flagged `below_resolution` | the span was shorter than the counter's update interval (~102 ms for the NVML counter on the development GPU); the value is quantised, usually exactly 0 J or one update, and biased low |
+| **Missing** | `n/a`, with a reason | no defensible counter difference: no counter, failed read, counter reset, outside the sampler's timeline |
+| **Estimated** | "ESTIMATED ENERGY", `estimates.*` | integrated sampled power, shown only for spans without a measurement; never added to measured totals |
+
+Rules the report follows:
+
+- **No double counting.** Totals add top-level spans only. Per-operation
+  energy is *exclusive*: a parent's own share with its children removed.
+- **No partial totals.** A total appears only if every contributing span was
+  measured; otherwise the report shows "n/a" and, separately, the sum over the
+  measured spans with how many that covers.
+- **Concurrency is not split.** Spans that overlap other recorded work are
+  `shared`: their (inclusive) energy includes the other work and they get no
+  exclusive energy. Concurrent top-level spans mean no span-based total; use
+  the independent window measurement.
+- **0 J is not "no energy".** For short spans it is quantisation.
+- **Warnings** at the end of every report name what limits the numbers above
+  them (unknown resolution, below-resolution share, shared spans, missing
+  domains, estimates, clock anomalies).
+
+Short operations: with an NVIDIA GPU, each span costs about 1.7–2.2 ms of
+extra wall time on the development host (two NVML reads; p90 ~8 ms), against
+0.01–0.05 ms without GPU reading. The reads lie outside the span's measured
+duration but lengthen the workload, and below ~20 ms per operation that
+overhead is a large fraction of the work. Use `gpu=False` (or
+`aep run --gpu off`) when you only need timings.
+
+## Schema compatibility
+
+| | Schema v1 (`events.jsonl`) | Schema v2 (`spans.jsonl`) |
+|---|---|---|
+| Written by | `profiler.span`, `profiler.configure` (legacy functional API) | `Session` |
+| Attributed by | `aep attribute` (v1 pipeline, unchanged, byte-identical to the research results) | `aep attribute` / `aep-attribute-v2` |
+| Report / export | `aep report`, `aep export` | `aep report`, `aep export` |
+| Hierarchy | none | trace, span and parent ids; exclusive energy |
+| Estimates | mixed into `gpu_energy_j` (marked by `gpu_energy_source`) | separate `estimates` |
+
+- v1 files stay readable by everything; v2 reads them by upgrading each event
+  on the fly (the file is not changed). v1's power-integration values are then
+  treated as estimates.
+- v1-only tools (`aep-aggregate`, `aep-visualize`, `trajectory`) do not read
+  v2.
+- Field definitions: [docs/SCHEMA_V2.md](docs/SCHEMA_V2.md). Migration table
+  from the v1 API: [docs/SCHEMA_V2.md](docs/SCHEMA_V2.md#reading-v1-as-v2)
+  and the table below.
 
 | v1 | v2 |
 |---|---|
 | `profiler.configure(events_file=..., run_id=...)` | `Session(path, attributes={"run_id": ...})` |
 | `profiler.span("llm:plan") as s; s["input_tokens"] = n` | `session.span("llm:plan") as s; s.set_tokens(input=n)` (`s["input_tokens"] = n` also works) |
-| `profiler.set_question(q)`, `begin_iteration()` | `attributes={"question_id": q, "iteration": i}` on the span, or a parent span per question |
-| `meta=...` / `attributes=` | `attributes=` (`s["meta"] = {...}` merges into attributes) |
-| `aep-attribute` | `aep-attribute-v2` |
-| `gpu_energy_j` with `gpu_energy_source="power_integration"` | `estimates.gpu`; `energy.gpu` is `unavailable` |
-| `measured_energy_j` | `total.energy_j` (null unless every term is measured) |
+| `profiler.set_question(q)` | `attributes={"question_id": q}` or a parent span per question |
+| `aep-attribute` | `aep attribute` (detects the schema) |
 
-- v1 files stay readable: `schema_v2.read_records()` and `aep-attribute-v2`
-  accept a v1 `events.jsonl` and upgrade each event on read (the file is not
-  changed). A v1 file has no span hierarchy, so overlapping events come out
-  `shared`.
-- v2 files are not readable by the v1 tools (`aep-attribute`, `aggregate`,
-  `visualize`, `trajectory`).
-- For the same window, v2 CPU-package, DRAM and in-band GPU counter values are
-  identical to v1's (tested against the golden fixture). The deliberate
-  differences: estimates leave the measured fields, unusable windows carry a
-  reason, and a decreasing GPU counter in the timeline invalidates the window
-  instead of producing a negative or understated value.
+## Known limitations
 
-## Measurement contract
-
-```
-measured_energy_j = gpu_energy_j + cpu_package_energy_j + dram_energy_j     (v1)
-total.energy_j    = gpu + cpu_package + dram, all measured                    (v2)
-```
-
-- RAPL `core`/`uncore` are diagnostic and never added. `psys` is excluded.
-- A domain the hardware did not report stays `null`, never `0`. A total with a
-  missing term is `null`.
-- Energy is **device-level**. NVML measures the whole GPU and RAPL the whole
-  package. Per-span energy is time-window attribution and is most defensible on
-  an otherwise idle machine running non-concurrent work. It is not
-  process-level energy.
-- The NVML counter updates at a host-specific interval, measured by
-  `aep-validate` (median ~106 ms on the validation host). Spans shorter than
-  that read 0 J or one whole quantum: quantisation, not measurement.
-
-The full list is in [docs/PROVENANCE.md](docs/PROVENANCE.md#known-measurement-limitations).
+1. **NVML counter disturbance (development host).** On WSL2 with driver
+   610.88, every read of the GPU energy counter lowers what it accumulates, for
+   all readers: with the 10 Hz sampler running it reports ~14% less than the
+   board power sensor; with reads every few milliseconds, most of the energy
+   disappears. The research runs this package came from show the same ~13%
+   signature. Until this is characterised on your host, treat GPU figures
+   taken with frequent reads as **lower bounds**. Details:
+   [PROVENANCE](docs/PROVENANCE.md#m31-review-of-m2-findings-recorded-before-any-m3-change).
+2. **Device-level only.** Concurrent work, other processes and background
+   services on the same device are inside every number.
+3. **Counter resolution.** The NVML counter updates every ~100–107 ms (it
+   varied by run and driver on one GPU); characterise it per host with
+   `aep validate`.
+4. **CPU/DRAM untested on real hardware.** RAPL handling (wraparound,
+   multi-socket) is tested synthetically only.
+5. **Asynchronous GPU work.** Synchronise (e.g. `torch.cuda.synchronize()`)
+   before a span closes; work in another process (vLLM, an inference server)
+   is bounded by the request, not its kernels.
+6. **No multiprocessing attribution.** One `Session` per process; nothing
+   separates device energy between processes.
+7. **No idle subtraction.** Idle draw is part of every figure.
 
 ## Test
 
 ```bash
+.venv/bin/pip install -e '.[test]'
 .venv/bin/python -m pytest
 # opt-in: re-attribute complete frozen research runs
 AEP_FROZEN_RUNS_DIR=/path/to/runs .venv/bin/python -m pytest -m frozen_runs
 # opt-in: read the real NVML counter through Session
 AEP_REAL_GPU=1 .venv/bin/python -m pytest tests/test_session.py -k real_nvml
+# testing an installed wheel from a copy of tests/
+AEP_TEST_INSTALLED=1 python -m pytest tests
 ```
+
+Run the suite with `TMPDIR` outside any git working tree: one provenance test
+checks that a temporary directory is *not* a repository.
 
 ## Repository hygiene
 
 - No AI tool appears as a Git author or co-author. Enable the commit-message
   guard once per clone: `git config core.hooksPath scripts/git-hooks`.
-- `tests/golden/` holds the reference artifacts. Never regenerate them to make
-  a failing test pass. A deliberate semantic change is documented in
-  `docs/PROVENANCE.md`.
+- `tests/golden/` (v1) and `tests/golden_v2/` (v2) hold reference artifacts.
+  Never regenerate them to make a failing test pass. A deliberate semantic
+  change is documented in `docs/PROVENANCE.md`.

@@ -197,7 +197,11 @@ def read_records(path, resolution=None, spans_only=True):
 	format is not guessed at. With spans_only, session_start/session_end
 	records are left out.
 	"""
-	out = []
+	return list(iter_records(path, resolution, spans_only))
+
+
+def iter_records(path, resolution=None, spans_only=True):
+	"""read_records as a generator: one record in memory at a time."""
 	with open(path) as f:
 		for number, line in enumerate(f, 1):
 			line = line.strip()
@@ -209,14 +213,13 @@ def read_records(path, resolution=None, spans_only=True):
 				continue
 			version = record.get("schema_version", 1)
 			if version == 1 or version is None:
-				out.append(upgrade_v1(record, resolution))
+				yield upgrade_v1(record, resolution)
 			elif version == SCHEMA_VERSION:
 				if spans_only and record.get("record_type") != SPAN:
 					continue
-				out.append(record)
+				yield record
 			else:
 				raise ValueError(f"{path}:{number}: unsupported schema_version {version!r}")
-	return out
 
 
 def session_header(path):

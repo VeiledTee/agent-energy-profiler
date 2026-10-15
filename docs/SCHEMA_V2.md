@@ -151,7 +151,7 @@ device yields a valid difference; otherwise it is `unavailable` or `invalid`.
 | `n_children` | direct children |
 | `children_overlap` | some direct children overlap each other in time |
 | `concurrent_spans` | spans that overlap this one in time and are neither its ancestors nor its descendants |
-| `attribution` | `sole` if `concurrent_spans == 0` and `other_sessions_active` is false; otherwise `shared` |
+| `attribution` | `sole` if `concurrent_spans == 0` and `other_sessions_active` is false; otherwise `shared`. "Sole" is among *recorded* spans only: un-instrumented work, other processes and background server activity on the same device are invisible to it |
 | `inclusive_duration_s` | `duration_s` |
 | `exclusive_duration_s` | `duration_s` minus the union of the children's intervals clipped to this span |
 | `exclusive.<domain>` | `{energy_j, status, reason}` |
@@ -185,6 +185,28 @@ null (`reason: "concurrent_root_spans"`), and the independent whole-window
 counter reading (`window.*`, from the sampler timeline) is the only total.
 Per-label rollups sum `exclusive` energy and report how many spans were left
 out because their exclusive energy was not defensible.
+
+## 5. Which `status` is which
+
+The word `status` appears at five levels. They are separate vocabularies:
+
+| Where | Values | Answers |
+|---|---|---|
+| span `status` | `ok`, `error`, `timeout`, `cancelled` | how did the work end? |
+| `energy.<domain>.status` | `measured`, `unavailable`, `invalid` | is there a defensible counter difference? |
+| `accounting.exclusive.<domain>.status` | the above plus `not_defensible` | can this span's own share be separated from its children's? |
+| `total.status` | `measured`, `incomplete` | are all three boundary domains measured? |
+| `estimates.<domain>.status` | `estimated`, `unavailable` | was an estimate computed? |
+
+Two consequences worth knowing:
+
+- `total.below_resolution` is `null` whenever a RAPL term is measured,
+  because RAPL resolution is uncharacterised. On a full-boundary host it is
+  therefore almost always `null`; read the GPU domain's flag instead.
+- For `sampled_counter_interpolated` values, the sampling period (100 ms at
+  10 Hz) is a second resolution limit that `below_resolution` does not
+  include. Today such values exist for RAPL (flag always `null`) and for the
+  session-window GPU reading, which is long.
 
 ## Reading v1 as v2
 

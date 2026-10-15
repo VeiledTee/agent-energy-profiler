@@ -157,45 +157,93 @@ def _total(energy):
 	}
 
 
+def _uncovered(span, timeline):
+	return (timeline is not None and span.get("start_unix_s") is not None
+	        and not timeline.covers(span["start_unix_s"], span["end_unix_s"]))
+
+
+def _uncovered_error(n_uncovered, n_spans):
+	return ValueError(f"{n_uncovered} of {n_spans} spans fall outside the hardware "
+	                  f"timeline; no energy is attributed. Use allow_uncovered to "
+	                  f"mark them not_covered.")
+
+
+def attribute_one(span, timeline=None):
+	"""One span with the timeline domains, estimates and total added (a copy;
+	the input is not modified). No accounting: that needs every span."""
+	s = dict(span)
+	energy = dict(s.get("energy") or {})
+	estimates = dict(s.get("estimates") or {})
+	t0, t1 = s.get("start_unix_s"), s.get("end_unix_s")
+	if timeline is None:
+		for domain in ("cpu_package", "dram", "cpu_core"):
+			energy.setdefault(domain, _unavailable(domain, "no_counter"))
+		estimates.setdefault("gpu", {"energy_j": None, "status": m.UNAVAILABLE,
+		                             "method": "power_integration",
+		                             "detail": "no hardware timeline supplied"})
+	elif not timeline.covers(t0, t1):
+		for domain in ("cpu_package", "dram", "cpu_core"):
+			energy[domain] = _unavailable(domain, "not_covered")
+		estimates.setdefault("gpu", {"energy_j": None, "status": m.UNAVAILABLE,
+		                             "method": "power_integration",
+		                             "detail": "span outside the hardware timeline"})
+	else:
+		for domain in ("cpu_package", "dram", "cpu_core"):
+			energy[domain] = timeline.rapl_domain(domain, t0, t1)
+		estimates.setdefault("gpu", timeline.gpu_estimate(t0, t1))
+	energy.setdefault("gpu", m.unavailable_gpu("no_counter"))
+	s["energy"] = energy
+	s["estimates"] = estimates
+	s["total"] = _total(energy)
+	return s
+
+
 def attribute_spans(spans, timeline=None, resolution=None, allow_uncovered=False):
-	"""Attributed + annotated spans. Raises ValueError on uncovered spans unless
-	allow_uncovered, in which case their timeline domains are not_covered."""
-	resolution = resolution or m.Resolution.unknown()
-	if timeline is not None and not allow_uncovered:
-		uncovered = [s for s in spans if s.get("start_unix_s") is not None
-		             and not timeline.covers(s["start_unix_s"], s["end_unix_s"])]
-		if uncovered:
-			raise ValueError(f"{len(uncovered)} of {len(spans)} spans fall outside "
-			                 f"the hardware timeline; no energy is attributed. "
-			                 f"Use allow_uncovered to mark them not_covered.")
-	out = []
-	for span in spans:
-		s = dict(span)
-		energy = dict(s.get("energy") or {})
-		estimates = dict(s.get("estimates") or {})
-		t0, t1 = s.get("start_unix_s"), s.get("end_unix_s")
-		if timeline is None:
-			for domain in ("cpu_package", "dram", "cpu_core"):
-				energy.setdefault(domain, _unavailable(domain, "no_counter"))
-			estimates.setdefault("gpu", {"energy_j": None, "status": m.UNAVAILABLE,
-			                             "method": "power_integration",
-			                             "detail": "no hardware timeline supplied"})
-		elif not timeline.covers(t0, t1):
-			for domain in ("cpu_package", "dram", "cpu_core"):
-				energy[domain] = _unavailable(domain, "not_covered")
-			estimates.setdefault("gpu", {"energy_j": None, "status": m.UNAVAILABLE,
-			                             "method": "power_integration",
-			                             "detail": "span outside the hardware timeline"})
-		else:
-			for domain in ("cpu_package", "dram", "cpu_core"):
-				energy[domain] = timeline.rapl_domain(domain, t0, t1)
-			estimates.setdefault("gpu", timeline.gpu_estimate(t0, t1))
-		energy.setdefault("gpu", m.unavailable_gpu("no_counter"))
-		s["energy"] = energy
-		s["estimates"] = estimates
-		s["total"] = _total(energy)
-		out.append(s)
-	return accounting.annotate(out)
+	"""Attributed + annotated spans, all in memory. Raises ValueError on
+	uncovered spans unless allow_uncovered, in which case their timeline
+	domains are not_covered. `attribute_file` streams instead."""
+	spans = list(spans)
+	if not allow_uncovered:
+		n = sum(1 for s in spans if _uncovered(s, timeline))
+		if n:
+			raise _uncovered_error(n, len(spans))
+	return accounting.annotate([attribute_one(s, timeline) for s in spans])
+
+
+def attribute_file(spans_path, out_path, timeline=None, resolution=None,
+                   allow_uncovered=False):
+	"""Stream a spans file to spans_attributed.jsonl; returns the summary.
+
+	Two passes over the input so that memory holds only the accounting
+	index, never all spans: pass 1 attributes each span to build its compact
+	accounting node (and checks coverage before anything is written); pass 2
+	attributes it again -- the same deterministic computation -- adds its
+	accounting and writes it out. Output is byte-identical to the in-memory
+	attribute_spans + accounting.summarize path.
+	"""
+	nodes, n_uncovered = [], 0
+	t_min = t_max = None
+	for span in schema_v2.iter_records(spans_path, resolution):
+		if _uncovered(span, timeline):
+			n_uncovered += 1
+		row = attribute_one(span, timeline)
+		nodes.append(accounting.compact(row))
+		if row.get("start_unix_s") is not None:
+			t_min = row["start_unix_s"] if t_min is None else min(t_min, row["start_unix_s"])
+		if row.get("end_unix_s") is not None:
+			t_max = row["end_unix_s"] if t_max is None else max(t_max, row["end_unix_s"])
+	if n_uncovered and not allow_uncovered:
+		raise _uncovered_error(n_uncovered, len(nodes))
+
+	index = accounting.Index(nodes)
+	builder = accounting.SummaryBuilder()
+	with open(out_path, "w") as f:
+		for i, span in enumerate(schema_v2.iter_records(spans_path, resolution)):
+			row = attribute_one(span, timeline)
+			row["accounting"] = index.account(i)
+			f.write(json.dumps(row) + "\n")
+			builder.add(row)
+	return builder.result(_window_from_bounds(t_min, t_max, timeline, resolution))
 
 
 def session_window(spans, timeline, resolution):
@@ -206,7 +254,13 @@ def session_window(spans, timeline, resolution):
 	ends = [s["end_unix_s"] for s in spans if s.get("end_unix_s") is not None]
 	if not starts or not ends:
 		return None
-	t0, t1 = min(starts), max(ends)
+	return _window_from_bounds(min(starts), max(ends), timeline, resolution)
+
+
+def _window_from_bounds(t0, t1, timeline, resolution):
+	if timeline is None or t0 is None or t1 is None:
+		return None
+	resolution = resolution or m.Resolution.unknown()
 	if not timeline.covers(t0, t1):
 		domains = {"gpu": m.domain(None, m.UNAVAILABLE, "not_covered",
 		                           m.GPU_SOURCE, m.SAMPLED)}
@@ -242,20 +296,17 @@ def main(argv=None):
 		resolution = m.Resolution.from_dict(header["config"].get("resolution"))
 	else:
 		resolution = m.Resolution.unknown()
-	spans = schema_v2.read_records(args.spans, resolution)
 	timeline = Timeline(args.power, args.power_meta or None) if args.power else None
 
+	os.makedirs(args.out_dir, exist_ok=True)
+	out_path = os.path.join(args.out_dir, "spans_attributed.jsonl")
 	try:
-		rows = attribute_spans(spans, timeline, resolution, args.allow_uncovered)
+		summary = attribute_file(args.spans, out_path, timeline, resolution,
+		                         args.allow_uncovered)
 	except ValueError as e:
 		print(f"ERROR: {e}", file=sys.stderr)
 		return 1
-
-	os.makedirs(args.out_dir, exist_ok=True)
-	with open(os.path.join(args.out_dir, "spans_attributed.jsonl"), "w") as f:
-		for row in rows:
-			f.write(json.dumps(row) + "\n")
-	summary = accounting.summarize(rows, session_window(rows, timeline, resolution))
+	n_rows = summary["n_spans"]
 	summary.update({
 		"schema_version": schema_v2.SCHEMA_VERSION,
 		"input": os.path.abspath(args.spans),
@@ -271,7 +322,7 @@ def main(argv=None):
 	})
 	with open(os.path.join(args.out_dir, "session_summary.json"), "w") as f:
 		json.dump(summary, f, indent=2)
-	print(f"{len(rows)} spans attributed -> {args.out_dir}")
+	print(f"{n_rows} spans attributed -> {args.out_dir}")
 	return 0
 
 

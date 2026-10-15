@@ -7,6 +7,18 @@ agentic AI systems. It was extracted from the PhD research repository
 `Chain-of-Relations-Emissions` at commit `08bbc96` (see `docs/PROVENANCE.md`).
 The two projects are maintained independently.
 
+## Project Isolation
+
+This repository is the standalone Agent Energy Profiler project.
+
+- All development must remain within `/home/penguins/agent-energy-profiler`.
+- Never modify files in `Chain-of-Relations-Emissions`.
+- Never modify the thesis repository's dependencies, experiments, results, or Git history.
+- Do not execute commands that write outside this repository without explicit approval.
+- Treat the thesis repository as read-only reference material.
+- Maintain an independent virtual environment and Git history.
+- Do not push commits unless explicitly instructed.
+
 ## Hard rules
 
 - Never modify the research repository (`/home/penguins/Chain-of-Relations-Emissions`)

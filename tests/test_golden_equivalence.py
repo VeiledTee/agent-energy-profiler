@@ -60,9 +60,14 @@ class TestGoldenFixtures(unittest.TestCase):
 		self.assertGreaterEqual(len(cases()), 4)
 
 	def test_package_under_test_is_this_repository(self):
+		here = os.path.realpath(os.path.dirname(agent_energy_profiler.__file__))
 		src = os.path.join(os.path.dirname(HERE), "src", "agent_energy_profiler")
-		self.assertEqual(os.path.realpath(os.path.dirname(agent_energy_profiler.__file__)),
-		                 os.path.realpath(src))
+		if os.environ.get("AEP_TEST_INSTALLED") == "1":
+			# Testing an installed wheel: the package must NOT come from a
+			# source tree, or the wheel itself would go untested.
+			self.assertIn("site-packages", here)
+			return
+		self.assertEqual(here, os.path.realpath(src))
 
 	def test_expected_artifacts_match_their_manifest(self):
 		for case in cases():
