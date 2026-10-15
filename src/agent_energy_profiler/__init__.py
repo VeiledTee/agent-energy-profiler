@@ -59,8 +59,9 @@ __version__ = "0.1.0"
 #:   * `python -m agent_energy_profiler.<module>` warns when the package
 #:     __init__ has already imported the module runpy is about to execute;
 #:   * importing the package should cost nothing and touch no hardware. The
-#:     sampler in particular opens NVML and enumerates RAPL zones at import,
-#:     so it is deliberately NOT listed here and stays an explicit import.
+#:     sampler is a command-line tool, not part of the library surface, so it
+#:     is NOT listed here and stays an explicit import. (It no longer touches
+#:     hardware at import either; see sampling.init.)
 #:
 #: The set matches the previously eager one exactly: this changes when a
 #: submodule is loaded, never which names exist.

@@ -62,6 +62,28 @@ def column_names(paths):
 	        for path in paths]
 
 
+def max_energy_range_uj(path):
+	"""Wraparound range (uJ) a counter declares, or None if it declares none.
+
+	powercap zones expose `max_energy_range_uj` beside `energy_uj`; the value
+	differs between hosts, sockets and domains, so it is read per counter and
+	never assumed. amd_energy hwmon inputs carry no such file. None means the
+	range is unknown, and attribution then refuses to unwrap a decrease rather
+	than guessing one.
+	"""
+	try:
+		with open(os.path.join(os.path.dirname(path), "max_energy_range_uj")) as f:
+			value = int(f.read().strip())
+	except Exception:
+		return None
+	return value if value > 0 else None
+
+
+def column_ranges(paths):
+	"""{column name: max_energy_range_uj or None} for each counter path."""
+	return dict(zip(column_names(paths), (max_energy_range_uj(p) for p in paths)))
+
+
 def read_zone(path):
 	"""Raw cumulative counter value (uJ) as text, or None if unreadable."""
 	try:

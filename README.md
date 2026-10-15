@@ -8,11 +8,13 @@ hardware energy counters (NVIDIA NVML, Linux RAPL), and an attribution step
 joins the two. The profiler never infers what an operation is: the label comes
 from the caller that knows why the work is happening.
 
-> **Status: 0.1.0, initial extraction.** This repository was extracted from a
-> PhD research codebase. Its behaviour is intentionally identical to the
-> source implementation, and golden tests prove it. See
-> [docs/PROVENANCE.md](docs/PROVENANCE.md) for the source commit, what was
-> copied and the known measurement limitations. The API will change in later
+> **Status: 0.1.0, extraction plus Milestone 1 corrections.** This repository
+> was extracted from a PhD research codebase. Milestone 1 fixed measurement
+> defects (partial multi-device sums, RAPL wraparound, cancellation status,
+> import-time hardware access) and attribution speed; the golden tests show
+> the research runs still attribute byte for byte as before. See
+> [docs/PROVENANCE.md](docs/PROVENANCE.md) for the source commit, the change
+> log and the known measurement limitations. The API will change in later
 > milestones.
 
 ## Install
@@ -45,7 +47,7 @@ with profiler.span("llm:plan") as s:
 
 ```bash
 aep-validate                                  # what can this host measure?
-aep-sample --out power.csv --hz 10 &          # hardware timeline (Ctrl-C / SIGTERM to stop)
+aep-sample --out power.csv --hz 10 &          # hardware timeline + power.csv.meta.json (Ctrl-C / SIGTERM to stop)
 python my_agent.py                            # writes events.jsonl
 aep-attribute --events events.jsonl --power power.csv --out energy_summary.csv
 aep-aggregate --help                          # long-format rollups

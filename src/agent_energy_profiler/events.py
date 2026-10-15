@@ -34,6 +34,7 @@ import contextvars
 import json
 import os
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -498,6 +499,19 @@ def record(label, start, end, status=Status.OK, input_tokens=None,
 
 # --- span: the measured-block API -----------------------------------------
 
+def _is_cancellation(exc) -> bool:
+	"""Whether an exception means the work was interrupted, not that it failed.
+
+	KeyboardInterrupt, and asyncio.CancelledError (task.cancel(), wait_for
+	timeouts, TaskGroup teardown). asyncio is looked up rather than imported:
+	if the program never loaded it, the exception cannot be its CancelledError.
+	"""
+	if isinstance(exc, KeyboardInterrupt):
+		return True
+	asyncio = sys.modules.get("asyncio")
+	return asyncio is not None and isinstance(exc, asyncio.CancelledError)
+
+
 @contextlib.contextmanager
 def span(label, status=Status.OK, attributes=None, **meta):
 	"""Measure the enclosed block and record it under `label`.
@@ -511,7 +525,9 @@ def span(label, status=Status.OK, attributes=None, **meta):
 	An exception escaping the block is recorded with status "error" (and
 	meta.exception_type) and then re-raised: the workload's own error handling
 	is unchanged, but a terminal failure is never logged as a success and never
-	silently dropped.
+	silently dropped. Interruption (KeyboardInterrupt, asyncio cancellation) is
+	recorded the same way but with status "cancelled": the work was stopped,
+	it did not fail.
 
 	Token counts are set by the block itself through the yielded dict, since
 	they are only known once the call returns:
@@ -530,7 +546,8 @@ def span(label, status=Status.OK, attributes=None, **meta):
 		with operation(label):
 			yield fields
 	except BaseException as exc:
-		record(label, start, mark(), status=Status.ERROR,
+		record(label, start, mark(),
+		       status=Status.CANCELLED if _is_cancellation(exc) else Status.ERROR,
 		       input_tokens=fields.get("input_tokens"),
 		       output_tokens=fields.get("output_tokens"),
 		       exception_type=type(exc).__name__, **fields["meta"])

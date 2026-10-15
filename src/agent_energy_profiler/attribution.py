@@ -19,7 +19,10 @@ Method:
         window. Events shorter than the sampling period get nearest-sample
         power x duration (an estimate, flagged as such below).
   RAPL: cumulative counters -> energy delta over the window, interpolated
-        between samples; handles counter wraparound.
+        between samples. Wraparound is unwrapped with each counter's own
+        max_energy_range_uj, read from the sampler's metadata sidecar
+        (<power.csv>.meta.json); a decrease that cannot be resolved as one
+        wrap makes the windows spanning it null.
 
 Energy accounting boundary:
 
@@ -55,7 +58,8 @@ from collections import defaultdict
 
 from . import trajectory
 
-RAPL_MAX = 2**32 * 1e0  # wraparound guard; actual max_energy_range varies
+#: Format tag of the sampler's power-metadata sidecar (<power.csv>.meta.json).
+POWER_META_FORMAT = "agent_energy_profiler.power_meta"
 
 #: Semantic fields carried through from the raw event to the attributed one.
 #: Attribution must never lose question id, iteration, traversal depth, step
@@ -119,6 +123,32 @@ def load_power(path):
 	return ts, gpu_power_cols, rapl_cols, gpu_energy_cols
 
 
+def power_meta_path(power_path):
+	"""Where the sampler writes the metadata sidecar for a power.csv."""
+	return power_path + ".meta.json"
+
+
+def load_power_meta(path):
+	"""{rapl column: max_energy_range_uj or None} from a metadata sidecar.
+
+	The sidecar is optional: a power.csv written before it existed, or by a
+	sampler that could not read the ranges, yields {} and every RAPL range is
+	then unknown. A malformed file or entry is treated the same way. Unknown
+	ranges never fall back to an assumed value (see unwrap_counter).
+	"""
+	try:
+		with open(path) as f:
+			meta = json.load(f)
+	except (OSError, ValueError):
+		return {}
+	if not isinstance(meta, dict) or meta.get("format") != POWER_META_FORMAT:
+		return {}
+	zones = meta.get("rapl_max_energy_range_uj")
+	if not isinstance(zones, dict):
+		return {}
+	return {str(column): valid_range(value) for column, value in zones.items()}
+
+
 def classify_rapl(rapl_cols):
 	"""Split RAPL columns into package / core / dram.
 
@@ -168,6 +198,25 @@ def backward_steps(ts):
 	return [(i, ts[i], ts[i + 1]) for i in range(len(ts) - 1) if ts[i + 1] < ts[i]]
 
 
+# --- prepared series ---------------------------------------------------------
+# Every window lookup below works on a column's USABLE samples (value not
+# None), in file order. Filtering is done once per column, not once per
+# window: attribution used to rebuild these lists for every event and every
+# trajectory, which made it O(windows x samples). The prepared lists are the
+# exact lists the per-call code built, so bisection and arithmetic -- and
+# therefore every output byte -- are unchanged. The public per-call functions
+# remain and prepare their column on each call.
+
+def usable_samples(ts, values):
+	"""(timestamps, values) of the samples that carry a value, in file order."""
+	tt, vv = [], []
+	for t, v in zip(ts, values):
+		if v is not None:
+			tt.append(t)
+			vv.append(v)
+	return tt, vv
+
+
 def integrate_gpu(ts, watts, t0, t1):
 	"""Trapezoidal integral of power over [t0, t1] -> Joules, or None.
 
@@ -177,11 +226,16 @@ def integrate_gpu(ts, watts, t0, t1):
 	"""
 	if t0 is None or t1 is None or t1 <= t0:
 		return None
-	pts = [(t, w) for t, w in zip(ts, watts) if w is not None]
-	if not pts:
+	return integrate_prepared(usable_samples(ts, watts), t0, t1)
+
+
+def integrate_prepared(series, t0, t1):
+	"""integrate_gpu over a series from usable_samples()."""
+	if t0 is None or t1 is None or t1 <= t0:
 		return None
-	ts = [p[0] for p in pts]
-	watts = [p[1] for p in pts]
+	ts, watts = series
+	if not ts:
+		return None
 	lo = bisect.bisect_left(ts, t0)
 	hi = bisect.bisect_right(ts, t1)
 	if lo >= len(ts):
@@ -201,31 +255,118 @@ def integrate_gpu(ts, watts, t0, t1):
 	return j
 
 
-def rapl_delta(ts, uj, t0, t1):
+def valid_range(max_range):
+	"""A usable max_energy_range_uj (positive number), or None."""
+	if isinstance(max_range, bool) or not isinstance(max_range, (int, float)):
+		return None
+	return max_range if max_range > 0 else None
+
+
+def unwrap_counter(values, max_range):
+	"""Unwrap a cumulative uJ counter, in the order its samples were read.
+
+	Returns (unwrapped, segment): unwrapped[k] is values[k] plus every range
+	the counter has wrapped through before k; segment[k] increases by one at
+	each decrease that cannot be explained as exactly one wraparound. A delta
+	is only defensible between samples of the same segment.
+
+	A decrease (v[k] < v[k-1]) counts as one wrap only when all of:
+
+	  * the counter's own max_energy_range_uj is known and valid;
+	  * both readings lie inside [0, max_range] (otherwise the metadata does
+	    not describe this counter);
+	  * the wrap-corrected increment, max_range - v[k-1] + v[k], is below
+	    half the range. A genuine wrap at ~10 Hz is a tiny increment; a large
+	    one means a counter reset, a stalled sampler that may have wrapped
+	    more than once, or wrong metadata, and the number of wraps is then
+	    unknowable from the samples.
+
+	Anything else starts a new segment: the energy across that interval is
+	unavailable, never invented. A wrap hidden inside an increase (sampler
+	stalled for more than a full range) cannot be detected from the samples
+	at all; that is a documented limitation, not handled here.
+	"""
+	max_range = valid_range(max_range)
+	unwrapped, segment = [], []
+	offset, seg, prev = 0, 0, None
+	for v in values:
+		if prev is not None and v < prev:
+			if (max_range is not None and 0 <= v <= max_range
+			        and 0 <= prev <= max_range
+			        and (max_range - prev + v) < max_range / 2):
+				offset += max_range
+			else:
+				seg += 1
+		unwrapped.append(v + offset if offset else v)
+		segment.append(seg)
+		prev = v
+	return unwrapped, segment
+
+
+def rapl_delta(ts, uj, t0, t1, max_range=None):
 	"""Energy delta (J) from a cumulative uJ counter over [t0, t1].
 
-	Returns None when the counter has too few usable samples to difference:
-	an absent counter is missing data, not zero energy.
+	`max_range` is this counter's own max_energy_range_uj (see
+	hardware.rapl.max_energy_range_uj), used to unwrap wraparound. Without it,
+	a counter that never decreases is differenced as before, and an interval
+	in which it decreases is unavailable (see unwrap_counter).
+
+	Returns None when the counter has too few usable samples to difference, or
+	when the window spans a decrease that cannot be resolved as one wrap: an
+	absent or ambiguous counter is missing data, not zero energy.
 	"""
-	pts = [(t, v) for t, v in zip(ts, uj) if v is not None]
-	if len(pts) < 2 or t1 <= t0:
+	return rapl_delta_prepared(prepare_rapl(ts, uj, max_range), t0, t1)
+
+
+def prepare_rapl(ts, uj, max_range=None):
+	"""(timestamps, unwrapped values, segments) of a RAPL column's usable
+	samples, for rapl_delta_prepared."""
+	tt, vv = usable_samples(ts, uj)
+	vals, seg = unwrap_counter(vv, max_range)
+	return tt, vals, seg
+
+
+def rapl_delta_prepared(series, t0, t1):
+	"""rapl_delta over a series from prepare_rapl()."""
+	tt, vals, seg = series
+	if len(tt) < 2 or t1 <= t0:
 		return None
 
-	def value_at(t):
-		tt = [p[0] for p in pts]
+	def bracket(t):
 		i = bisect.bisect_left(tt, t)
 		if i <= 0:
-			return pts[0][1]
-		if i >= len(pts):
-			return pts[-1][1]
-		(ta, va), (tb, vb) = pts[i - 1], pts[i]
-		if vb < va:  # wraparound between samples
-			vb += RAPL_MAX
-		return va + (vb - va) * (t - ta) / (tb - ta)
+			return 0, 0
+		if i >= len(tt):
+			return len(tt) - 1, len(tt) - 1
+		if seg[i - 1] != seg[i]:
+			# Interpolating across an unresolved decrease is meaningless, but
+			# a boundary that falls exactly on a sample needs only that sample.
+			if t == tt[i]:
+				return i, i
+			if t == tt[i - 1]:
+				return i - 1, i - 1
+		return i - 1, i
 
-	d = value_at(t1) - value_at(t0)
+	def value_at(a, b, t):
+		if a == b:
+			return vals[a]
+		ta, tb = tt[a], tt[b]
+		if tb == ta:
+			return vals[b]
+		return vals[a] + (vals[b] - vals[a]) * (t - ta) / (tb - ta)
+
+	a0, b0 = bracket(t0)
+	a1, b1 = bracket(t1)
+	# Segments only grow with sample index, so equal segments at the lowest
+	# and highest sample used mean no unresolved decrease lies in between.
+	if seg[min(a0, a1)] != seg[max(b0, b1)]:
+		return None
+	d = value_at(a1, b1, t1) - value_at(a0, b0, t0)
 	if d < 0:
-		d += RAPL_MAX
+		# An unwrapped counter does not run backwards. A negative difference
+		# can only come from a wall-clock step in the timeline, so the window
+		# lookup is unreliable; the old code added 2**32 uJ here.
+		return None
 	return d / 1e6  # uJ -> J
 
 
@@ -239,18 +380,22 @@ def counter_delta(ts, values, t0, t1, scale):
 	Returns None when fewer than two usable samples exist: an absent counter is
 	missing data, never zero energy.
 	"""
-	pts = [(t, v) for t, v in zip(ts, values) if v is not None]
-	if len(pts) < 2 or t1 <= t0:
+	return counter_delta_prepared(usable_samples(ts, values), t0, t1, scale)
+
+
+def counter_delta_prepared(series, t0, t1, scale):
+	"""counter_delta over a series from usable_samples()."""
+	tt, vv = series
+	if len(tt) < 2 or t1 <= t0:
 		return None
-	tt = [p[0] for p in pts]
 
 	def value_at(t):
 		i = bisect.bisect_left(tt, t)
 		if i <= 0:
-			return pts[0][1]
-		if i >= len(pts):
-			return pts[-1][1]
-		(ta, va), (tb, vb) = pts[i - 1], pts[i]
+			return vv[0]
+		if i >= len(tt):
+			return vv[-1]
+		ta, va, tb, vb = tt[i - 1], vv[i - 1], tt[i], vv[i]
 		if tb == ta:
 			return vb
 		return va + (vb - va) * (t - ta) / (tb - ta)
@@ -258,26 +403,61 @@ def counter_delta(ts, values, t0, t1, scale):
 	return (value_at(t1) - value_at(t0)) / scale
 
 
+def _sum_complete(parts):
+	"""Sum of a device group, or None unless every device yielded a value.
+
+	A group (several GPUs, several RAPL sockets) is one measurement of the
+	whole domain. If any member is unreadable, the readable members are only a
+	subset of the hardware, and their sum would silently understate the domain
+	as if it were complete. A measured 0.0 is a reading, not a gap.
+	"""
+	if not parts or any(p is None for p in parts):
+		return None
+	return sum(parts)
+
+
 def sum_counter_domain(ts, cols, t0, t1, scale):
-	"""Total energy (J) across a counter column group, or None if unavailable."""
-	if not cols:
-		return None
-	parts = [counter_delta(ts, values, t0, t1, scale) for values in cols.values()]
-	present = [p for p in parts if p is not None]
-	if not present or len(present) != len(parts):
-		return None if not present else sum(present)
-	return sum(present)
+	"""Total energy (J) across a counter column group, or None if unavailable.
+
+	None when the group is empty or any column cannot be differenced.
+	"""
+	return sum_counter_prepared(prepare_counter_group(ts, cols), t0, t1, scale)
 
 
-def sum_domain(ts, cols, t0, t1):
-	"""Total energy (J) across one RAPL domain group, or None if unavailable."""
-	if not cols:
+def sum_domain(ts, cols, t0, t1, ranges=None):
+	"""Total energy (J) across one RAPL domain group, or None if unavailable.
+
+	None when the group is empty or any column cannot be differenced.
+	`ranges` maps column name -> max_energy_range_uj (see load_power_meta);
+	each socket/domain is unwrapped with its own range.
+	"""
+	return sum_rapl_prepared(prepare_rapl_group(ts, cols, ranges), t0, t1)
+
+
+def prepare_counter_group(ts, cols):
+	"""Prepared series for every column of a counter group (GPU mJ)."""
+	return [usable_samples(ts, values) for values in cols.values()]
+
+
+def prepare_rapl_group(ts, cols, ranges=None):
+	"""Prepared series for every column of a RAPL domain group."""
+	ranges = ranges or {}
+	return [prepare_rapl(ts, values, ranges.get(name))
+	        for name, values in cols.items()]
+
+
+def sum_counter_prepared(group, t0, t1, scale):
+	"""sum_counter_domain over prepare_counter_group() output."""
+	if not group:
 		return None
-	parts = [rapl_delta(ts, values, t0, t1) for values in cols.values()]
-	present = [p for p in parts if p is not None]
-	if not present:
+	return _sum_complete([counter_delta_prepared(s, t0, t1, scale) for s in group])
+
+
+def sum_rapl_prepared(group, t0, t1):
+	"""sum_domain over prepare_rapl_group() output."""
+	if not group:
 		return None
-	return sum(present)
+	return _sum_complete([rapl_delta_prepared(s, t0, t1) for s in group])
 
 
 def measured_total(gpu_j, cpu_package_j, dram_j):
@@ -372,8 +552,17 @@ def render_coverage_failure(uncovered, considered, ts):
 	return "\n".join(lines)
 
 
-def attribute_events(events, ts, gpus, rapls):
+def attribute_events(events, ts, gpus, rapls, rapl_ranges=None):
+	"""Attributed rows and GPU-source counts.
+
+	`rapl_ranges` maps RAPL column -> max_energy_range_uj (load_power_meta);
+	omitted, every range is unknown and wraps are reported unavailable.
+	"""
 	pkg_cols, core_cols, dram_cols = classify_rapl(rapls)
+	pkg_p = prepare_rapl_group(ts, pkg_cols, rapl_ranges)
+	core_p = prepare_rapl_group(ts, core_cols, rapl_ranges)
+	dram_p = prepare_rapl_group(ts, dram_cols, rapl_ranges)
+	gpu_power_p = [usable_samples(ts, w) for w in gpus.values()]
 	gpu_src = {"counter": 0, "integrated": 0, "unavailable": 0}
 	rows = []
 
@@ -393,7 +582,7 @@ def attribute_events(events, ts, gpus, rapls):
 			gpu_source = "nvml_counter"
 			gpu_src["counter"] += 1
 		else:
-			parts = [integrate_gpu(ts, w, t0, t1) for w in gpus.values()]
+			parts = [integrate_prepared(s, t0, t1) for s in gpu_power_p]
 			if parts and all(p is not None for p in parts):
 				gpu_j = sum(parts)
 				gpu_source = "power_integration"
@@ -406,9 +595,9 @@ def attribute_events(events, ts, gpus, rapls):
 				if gpus:
 					gpu_src["unavailable"] += 1
 
-		cpu_package_j = sum_domain(ts, pkg_cols, t0, t1)
-		cpu_core_j = sum_domain(ts, core_cols, t0, t1)  # diagnostic only
-		dram_j = sum_domain(ts, dram_cols, t0, t1)
+		cpu_package_j = sum_rapl_prepared(pkg_p, t0, t1)
+		cpu_core_j = sum_rapl_prepared(core_p, t0, t1)  # diagnostic only
+		dram_j = sum_rapl_prepared(dram_p, t0, t1)
 
 		row = {key: e.get(key) for key in CARRIED_FIELDS}
 		# Legacy readers (measurement/analyze.py, audit_runs.py) still look for
@@ -469,12 +658,17 @@ def main():
 	ap.add_argument("--out-events", default="",
 	                help="per-event artifact (default: events_attributed.jsonl "
 	                     "beside --events)")
+	ap.add_argument("--power-meta", default="",
+	                help="sampler metadata sidecar with per-counter RAPL "
+	                     "max_energy_range_uj (default: <power>.meta.json if "
+	                     "present)")
 	args = ap.parse_args()
 
 	out_events = args.out_events or os.path.join(
 		os.path.dirname(os.path.abspath(args.events)), "events_attributed.jsonl")
 
 	ts, gpus, rapls, gpu_energy_cols = load_power(args.power)
+	rapl_ranges = load_power_meta(args.power_meta or power_meta_path(args.power))
 	events = []
 	for line in open(args.events):
 		line = line.strip()
@@ -496,7 +690,7 @@ def main():
 		print(render_coverage_failure(uncovered, considered, ts), file=sys.stderr)
 		return 1
 
-	rows, gpu_src = attribute_events(events, ts, gpus, rapls)
+	rows, gpu_src = attribute_events(events, ts, gpus, rapls, rapl_ranges)
 
 	with open(out_events, "w") as f:
 		for row in rows:
@@ -526,6 +720,11 @@ def main():
 	if core_cols:
 		print("NOTE: RAPL core is reported as a diagnostic only and is NOT "
 		      "added to measured_energy_j (it is contained within package).")
+	no_range = sorted(c for c in rapls if rapl_ranges.get(c) is None)
+	if no_range:
+		print(f"NOTE: {len(no_range)} RAPL counter(s) without a known "
+		      f"max_energy_range_uj -> a window in which such a counter "
+		      f"decreases is null (unavailable), never unwrapped by guess.")
 
 	by_label = defaultdict(lambda: defaultdict(float))
 	by_type = defaultdict(lambda: defaultdict(float))
@@ -565,17 +764,22 @@ def main():
 	# When the GPU counter is absent, gpu_energy_j is reported as None and the
 	# availability is stated explicitly -- never silently back-filled with the
 	# sampled estimate.
+	gpu_energy_p = prepare_counter_group(ts, gpu_energy_cols)
+	pkg_p = prepare_rapl_group(ts, pkg_cols, rapl_ranges)
+	dram_p = prepare_rapl_group(ts, dram_cols, rapl_ranges)
+	gpu_power_p = [usable_samples(ts, w) for w in gpus.values()]
+
 	def window_energy(t0, t1):
 		if t0 is None or t1 is None:
 			return None
-		gpu_counter = sum_counter_domain(ts, gpu_energy_cols, t0, t1, 1e3)
-		pkg_c = sum_domain(ts, pkg_cols, t0, t1)
-		dram_c = sum_domain(ts, dram_cols, t0, t1)
+		gpu_counter = sum_counter_prepared(gpu_energy_p, t0, t1, 1e3)
+		pkg_c = sum_rapl_prepared(pkg_p, t0, t1)
+		dram_c = sum_rapl_prepared(dram_p, t0, t1)
 
 		# diagnostics from the sampled power curve
 		sampled = None
 		if gpus:
-			parts = [integrate_gpu(ts, w, t0, t1) for w in gpus.values()]
+			parts = [integrate_prepared(s, t0, t1) for s in gpu_power_p]
 			sampled = sum(parts) if all(p is not None for p in parts) else None
 		mean_w = peak_w = None
 		if gpus:

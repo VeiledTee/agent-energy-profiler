@@ -49,6 +49,19 @@ def init() -> bool:
 	return _ok
 
 
+def shutdown() -> None:
+	"""Release NVML if init() brought it up, then forget the attempt.
+
+	Best-effort and safe to call when NVML was never initialised.
+	"""
+	if _ok and _pynvml is not None:
+		try:
+			_pynvml.nvmlShutdown()
+		except Exception:
+			pass
+	reset()
+
+
 def reset() -> None:
 	"""Forget the initialisation attempt (tests, re-probing)."""
 	global _pynvml, _handles, _ok, _tried

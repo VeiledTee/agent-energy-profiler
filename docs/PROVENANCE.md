@@ -88,8 +88,9 @@ Equivalence evidence at extraction:
 
 ## Known measurement limitations
 
-These are inherited unchanged. They are documented, not fixed: fixes come
-after baseline validation, behind the golden tests.
+These were inherited at extraction. Items 6, 7, 11, 13 and 14 were fixed in
+Milestone 1 (see [Milestone 1](#milestone-1-correctness-and-performance));
+they are kept here, marked, so the numbering stays stable.
 
 **Scope of what is measured**
 
@@ -111,11 +112,12 @@ after baseline validation, behind the golden tests.
 
 **Defects deliberately preserved at extraction**
 
-6. **Partial sums.** `attribution.sum_counter_domain` (multi-GPU) and
-   `attribution.sum_domain` (multi-socket RAPL) return the sum of the
-   available columns when only some are readable, instead of null.
-7. **RAPL wrap.** Wraparound uses a hardcoded `RAPL_MAX = 2**32` µJ rather
-   than each zone's `max_energy_range_uj`.
+6. **Partial sums.** *(Fixed in M1.1.)* `attribution.sum_counter_domain`
+   (multi-GPU) and `attribution.sum_domain` (multi-socket RAPL) returned the
+   sum of the available columns when only some were readable, instead of
+   null.
+7. **RAPL wrap.** *(Fixed in M1.2.)* Wraparound used a hardcoded
+   `RAPL_MAX = 2**32` µJ rather than each zone's `max_energy_range_uj`.
 8. **Estimates mixed into measured fields.** When an event has no in-band GPU
    counter reading, attribution integrates sampled power into
    `gpu_energy_j`, and that value enters `measured_energy_j`. It is
@@ -130,14 +132,208 @@ after baseline validation, behind the golden tests.
 10. **No span hierarchy.** There are no span or parent ids. Nested spans each
     record the full counter delta, so summing them double-counts. Overlap is
     detected, not resolved.
-11. **Cancellation status.** `span()` records `KeyboardInterrupt` and
-    `asyncio.CancelledError` as `error`, not `cancelled`.
+11. **Cancellation status.** *(Fixed in M1.3.)* `span()` recorded
+    `KeyboardInterrupt` and `asyncio.CancelledError` as `error`, not
+    `cancelled`.
 12. **Wall clock only.** Events and samples use `time.time()`. Backward steps
     are flagged, never repaired, and no monotonic timestamp is recorded.
-13. **Import side effect.** Importing `agent_energy_profiler.sampling`
-    initialises NVML and scans RAPL zones.
-14. **Scaling.** Attribution is O(events × samples). Re-attributing a 230k-event
-    run takes several minutes.
+13. **Import side effect.** *(Fixed in M1.4.)* Importing
+    `agent_energy_profiler.sampling` initialised NVML and scanned RAPL zones.
+14. **Scaling.** *(Fixed in M1.5.)* Attribution was O(windows × samples).
+    Re-attributing the 230k-event ToG run took 393 s; it now takes ~8.5 s.
+
+## Milestone 1: correctness and performance
+
+Scope: fix measurement defects 6, 7, 11, 13 and 14 and make attribution
+scale, without changing validated research measurements and without schema
+v2. Event schema v1 is unchanged: no field was added, renamed or re-typed.
+
+### M1.1 Partial multi-device aggregates
+
+*Defect.* `sum_counter_domain` returned the sum of the readable GPU counter
+columns when another GPU's column could not be differenced; `sum_domain` did
+the same for RAPL sockets. A subset of the hardware was reported as the whole
+domain.
+
+*Fix.* Both go through `_sum_complete`: a group sums only when every column
+yields a value, otherwise the domain is `null` (and so is
+`measured_energy_j`, through the existing `measured_total` rule). A measured
+`0.0` is a value and is kept. Single-device groups and complete groups are
+unchanged. The per-event power-integration fallback already required every
+GPU; that is now pinned by a test.
+
+*Policy, stated once.* A multi-device domain is complete or it is `null`. No
+estimate replaces a missing device, and no partial sum is emitted under a
+total's name.
+
+### M1.2 RAPL wraparound
+
+*Defect.* Every RAPL counter was unwrapped with a hardcoded `2**32` µJ. The
+real range comes from each zone's `max_energy_range_uj` (commonly
+~262 kJ, and not equal across domains). The value never reached attribution:
+`power.csv` carries only counter readings. The same branch also turned any
+negative difference, which arises from a wall-clock backward step rather than
+a wrap, into +4,294.967 J. Separately, two samples with the same timestamp
+raised `ZeroDivisionError` in `rapl_delta` (the GPU `counter_delta` already
+guarded this).
+
+*Fix.*
+
+- `hardware.rapl.max_energy_range_uj` reads each zone's range (None when the
+  zone declares none, e.g. amd_energy hwmon, or the file is unreadable or not
+  a positive integer).
+- The sampler writes a sidecar beside the log, `<power.csv>.meta.json`:
+  `{"format": "agent_energy_profiler.power_meta", "version": 1,
+  "rapl_max_energy_range_uj": {<column>: <int or null>}}`. `power.csv`
+  itself is unchanged, so existing readers are unaffected.
+- `attribution` loads the sidecar (`--power-meta`, default
+  `<power>.meta.json` if present; absent or malformed means every range is
+  unknown) and unwraps each counter with its own range
+  (`unwrap_counter`), in sample-read order.
+- A decrease counts as exactly one wrap only if the range is known and valid,
+  both readings lie in `[0, range]`, and the wrap-corrected increment is below
+  half the range. Anything else (reset, possible multiple wraps, unknown or
+  contradicted metadata) starts a new segment: windows that span it are
+  `null`; windows on either side stay measured.
+- A negative difference is `null`, not +2³² µJ. Duplicate timestamps no
+  longer raise.
+
+*Behaviour change.* Without a sidecar, a RAPL counter that decreases inside a
+window now yields `null` there instead of a guessed wrap; a counter that
+never decreases gives exactly the old result. Every frozen run is GPU-only and
+the synthetic golden fixture never reaches the wrap branch (checked), so no
+reference output changes. `attribution.RAPL_MAX` was removed.
+
+*Known limits of the policy* (pinned by tests so they cannot drift):
+
+- A reset from above half the range is indistinguishable from a wrap.
+- A sampler stall longer than one full range hides a wrap inside an increase;
+  it cannot be detected from the samples.
+- These are synthetic tests of arithmetic and policy. They do not show the
+  behaviour of real RAPL hardware, which this project has still not measured.
+
+### M1.3 Cancellation status
+
+*Defect.* `span()` recorded `KeyboardInterrupt` and `asyncio.CancelledError`
+(including `wait_for` timeouts) as `error`.
+
+*Fix.* They are recorded as `cancelled`. `meta.exception_type` is kept, the
+end mark is taken at the interruption, the operation scope is restored, and
+the same exception object propagates. Other `BaseException`s (e.g.
+`SystemExit`) keep `error`. asyncio is looked up in `sys.modules`, not
+imported.
+
+*Compatibility.* `cancelled` was already in the schema-v1 status vocabulary
+(`schema.Status.CANCELLED`), so `schema.is_known_status` and existing readers
+accept it. Readers that test `status == "error"` will no longer count
+interrupted spans; `trajectory.n_failed_events` and `aggregate` count every
+status other than `ok`, so their counts are unchanged.
+
+### M1.4 Import-time hardware initialisation
+
+*Defect.* `import agent_energy_profiler.sampling` called `nvml.init()` and
+globbed `/sys/class/powercap` and `/sys/class/hwmon`.
+
+*Fix.* `sampling.init()` does both, once, on first use (`build_header`,
+`warn_about_gaps`, `main`). `main` releases NVML through the new
+`nvml.shutdown()` in a `finally`. Public names and the CLI are unchanged. No
+module in the package touches hardware, imports `pynvml` or starts a thread
+at import; a test checks every module with a recording fake NVML and a
+recording `glob`.
+
+### M1.5 Attribution performance
+
+*Profile (original code, ToG run, 230,042 events, 699,557 samples, under
+cProfile): 398 s.* 385 s (97%) was trajectory `window_energy`:
+`integrate_gpu` (169 s) and `counter_delta` (136 s) rebuilt each column's
+usable-sample list from all ~700k rows for each of 3,520 trajectories.
+Per-event attribution took only 3 s on this run because it has no RAPL
+columns and most events carry an in-band counter; with RAPL the same rebuild
+ran for every event and every RAPL column.
+
+*Fix.* Each column is filtered once per attribution call
+(`usable_samples`, `prepare_rapl`); window lookups then bisect the prepared
+lists. The lists are the ones the per-call code built, the integration loop
+and interpolation are unchanged, and no prefix sums or reordering were
+introduced, so floating-point results are bit-identical. The public per-call
+functions keep their signatures.
+
+*Benchmarks* (this machine, WSL2, Python 3.12.3; wall clock; not profiled):
+
+| Input | Events / samples | Original (`69a7e24`) | M1 | Artifacts |
+|---|---|---|---|---|
+| ToG frozen run (GPU only) | 230,042 / 699,557 | 392.7 s | 8.4–8.6 s (3 runs) | identical |
+| Synthetic, seed 20261015 (2 GPUs + RAPL) | 5,000 / 15,268 | 26.3 s | 0.19 s | identical |
+| Synthetic, seed 20261015 | 10,000 / 30,400 | 108.7 s | 0.37 s | identical |
+| Synthetic, seed 20261015 | 230,000 / 695,425 | not run (quadratic fit: ~16 h) | 12.1 s | — |
+
+The original's synthetic time grows 4.1× when events double: the quadratic
+behaviour. The ~16 h figure is an extrapolation from the 10k point, not a
+measurement. Some of the M1 ToG timings overlapped another test process on
+this 16-core machine.
+
+`tools/benchmark_attribution.py` regenerates the synthetic runs from a seed
+and compares against any source tree.
+
+### Regression coverage
+
+| File | Covers |
+|---|---|
+| `tests/test_partial_aggregation.py` | complete, incomplete, measured-zero and unavailable groups for multi-GPU and multi-socket, through to `measured_energy_j` |
+| `tests/test_rapl_wraparound.py` | normal deltas, one and two wraps, per-counter ranges, missing/invalid metadata, readings above range, reset, ambiguous wrap, clock step, duplicate timestamps, sidecar loading, sysfs range discovery, CLI end to end with and without sidecar |
+| `tests/test_span_cancellation.py` | ok, error, `KeyboardInterrupt`, sync and async `CancelledError`, `wait_for` timeout, `SystemExit`, scope restoration, sibling tasks |
+| `tests/test_import_side_effects.py` | no NVML/sysfs/thread at import of any module, import without `pynvml`, lazy and idempotent init, sidecar written and NVML shut down by `main` |
+| `tests/test_attribution_equivalence.py` | exact (`==`) equality with verbatim copies of the original functions on randomised timelines; each column filtered once per call |
+
+Each of these fails against the extraction commit (43 failures), except the
+import tests, which target `src/`; the original import was checked separately
+and calls `nvmlInit` plus two sysfs globs.
+
+### Unresolved after M1
+
+- **Estimates in measured fields (item 8)** are unchanged: the
+  power-integration fallback still fills `gpu_energy_j` and enters
+  `measured_energy_j`, marked only by `gpu_energy_source`. Separating it is a
+  schema change and belongs to a later milestone.
+- **GPU counter decreases.** `counter_delta` still differences the NVML
+  counter as-is. The register is 64-bit and does not wrap in practice, but a
+  driver reload or GPU reset would give a negative delta. Left unchanged to
+  keep GPU-only results identical; worth the same segment treatment as RAPL.
+- **Sidecar coverage.** Only this package's sampler writes
+  `<power.csv>.meta.json`. Logs from the research repository's sampler, or
+  hand-made ones, carry no ranges, so any RAPL decrease in them is `null`.
+- **Cancellation** recognises `KeyboardInterrupt` and asyncio cancellation
+  only. trio cancellation and `GeneratorExit` from an abandoned generator are
+  still recorded as `error`.
+- **More nulls on mixed hosts.** After M1.1, a host where one GPU's counter is
+  unsupported reports GPU energy `null` instead of the other GPUs' sum. That is
+  the intended policy, but it is visible.
+- The textual references to the research repository listed below were left
+  in place: changing them was not needed for any M1 fix.
+
+### Validation
+
+Run on 2026-10-15, before the M1 commit:
+
+- Baseline before changes: commit `69a7e24`, 268 passed, 8 skipped.
+- Full suite after M1: 333 passed, 8 skipped (the same eight tests, which
+  need frozen research data). With `AEP_FROZEN_RUNS_DIR` set: 334 passed, 7
+  skipped (those seven need runs `gemma4b_v2_*`, which are not in the research
+  directory).
+- Golden fixtures: all four cases (`cor_webqsp`, `tog_cwq`, `pog_cwq`,
+  `synthetic_rapl_multigpu`) reproduce byte for byte. No fixture was
+  regenerated.
+- Frozen runs (`pytest -m frozen_runs`, data read only): all three
+  re-attribute with the same results recorded at extraction (CoR and PoG
+  exact; ToG exact on every stored field plus the additive clock-anomaly
+  fields).
+- Wheel: built with `pip wheel`, installed into a fresh virtual environment;
+  the golden and all M1 regression tests pass against the installed copy. The
+  only failure there is `test_package_under_test_is_this_repository`, which by
+  design asserts the package is imported from `src/`. The wheel carries
+  `LICENSE` (`License-File: LICENSE`, `License: MIT`).
+- The research repository was not modified: HEAD `08bbc96`, clean working
+  tree, index unchanged.
 
 ## Remaining references to the research repository
 
@@ -165,3 +361,4 @@ schema v1 and generic in role. Renaming them is a schema-v2 decision.
 | Version | Change | Golden status |
 |---|---|---|
 | 0.1.0 | Initial extraction; no behaviour change | identical |
+| 0.1.0 + M1 (version not bumped) | Partial multi-device sums become `null` (M1.1). RAPL unwrapped per counter from `max_energy_range_uj` via the new `<power.csv>.meta.json` sidecar; unresolvable decreases and negative differences become `null`; `RAPL_MAX` removed (M1.2). Interrupted spans recorded `cancelled` (M1.3). No hardware access at import; `sampling.init()`, `nvml.shutdown()` (M1.4). Columns filtered once per attribution call (M1.5). | identical: all four fixtures byte for byte, and the three frozen runs |
