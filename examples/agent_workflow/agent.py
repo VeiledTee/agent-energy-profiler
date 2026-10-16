@@ -138,7 +138,9 @@ def main():
 	args = ap.parse_args()
 	index = BM25(CORPUS)
 
-	with Session.from_env(args.out, overwrite=True,
+	# Under `aep run`, its measurement mode applies. On its own there is no
+	# sampler, so per-span counter reads (direct) are the only GPU measurement.
+	with Session.from_env(args.out, overwrite=True, default_mode="direct",
 	                      attributes={"example": "agent_workflow",
 	                                  "parallel": args.parallel}) as session:
 		if args.parallel:

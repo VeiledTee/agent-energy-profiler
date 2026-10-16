@@ -1,6 +1,6 @@
 # Examples
 
-Three independent, runnable examples. None needs a paid API, an internet
+Four independent, runnable examples. None needs a paid API, an internet
 service or the research infrastructure this profiler came from.
 
 | Example | Needs | Shows |
@@ -8,11 +8,16 @@ service or the research infrastructure this profiler came from.
 | [cpu_workflow](cpu_workflow/) | core package only | nested spans over ordinary CPU work; why a GPU still reports energy |
 | [gpu_inference](gpu_inference/) | PyTorch with CUDA, an NVIDIA GPU | per-generation GPU energy; synchronising before a span closes |
 | [agent_workflow](agent_workflow/) | core package only | retrieval → reasoning → verification traces, retries, and concurrent (`shared`) spans |
+| [otel_tracing](otel_tracing/) | the `otel` extra | profiler spans inside an OpenTelemetry-traced service; one trace tree with energy attributes; `bind`, `analyze`, `export_spans` |
 
-All three record spans with `Session.from_env(...)`, so they work both on
-their own (writing a spans file in the current directory) and under
-`aep run`, which adds the hardware sampler, whole-program energy, attribution
-and a report.
+All four record spans with `Session.from_env(...)`, so they work both on
+their own (writing a spans file) and under `aep run`, which adds the hardware
+sampler, whole-program energy, attribution and a report. Each passes
+`default_mode=` explicitly: it applies only when the program runs on its own
+(see docs/MEASUREMENT_MODES.md, "Migrating towards conservative defaults").
+
+LangGraph: decorate node functions with `session.trace(label)`; see
+[docs/LANGGRAPH.md](../docs/LANGGRAPH.md).
 
 Before measuring on a new machine, characterise the GPU counter once:
 

@@ -22,11 +22,20 @@ dependencies = []
 gpu = ["nvidia-ml-py>=12.535"]
 # Figures (agent_energy_profiler.visualize). Imported only when drawing.
 plot = ["matplotlib>=3.5"]
+# OpenTelemetry integration (agent_energy_profiler.otel): trace correlation
+# needs only the API; exporting spans needs the SDK. Imported only by
+# agent_energy_profiler.otel and `aep otel-export`.
+otel = ["opentelemetry-api>=1.20", "opentelemetry-sdk>=1.20"]
+# `aep otel-export --endpoint`: OTLP over HTTP.
+otlp = ["opentelemetry-api>=1.20", "opentelemetry-sdk>=1.20",
+        "opentelemetry-exporter-otlp-proto-http>=1.20"]
 # Test runner only: the suite passes, skipping optional-dependency tests.
 dev = ["pytest>=8"]
 # The full suite with no optional-dependency skips (figures, numpy/pandas
-# interop). Core never imports these.
-test = ["pytest>=8", "matplotlib>=3.5", "numpy", "pandas"]
+# interop, OpenTelemetry). Core never imports these. The LangGraph
+# compatibility tests need `langgraph` installed separately.
+test = ["pytest>=8", "matplotlib>=3.5", "numpy", "pandas",
+        "opentelemetry-api>=1.20", "opentelemetry-sdk>=1.20"]
 
 [project.scripts]
 aep = "agent_energy_profiler.cli:main"

@@ -128,7 +128,8 @@ device yields a valid difference; otherwise it is `unavailable` or `invalid`.
 
 `ended_unix_s`, `n_spans_written`, `n_spans_dropped` (recording errors),
 `n_foreign_process_writes_refused` (fork safety, see README),
-`sampler_exit_code`.
+`sampler_exit_code`, and `n_hook_errors` when hooks were configured
+(section 7).
 
 ## 3. Attributed spans (`spans_attributed.jsonl`)
 
@@ -248,6 +249,29 @@ an empty counter cell. A sidecar without `timeline` means `every_row`.
 With a sparse policy (`every_n_rows`, `boundaries`), `window.domains.gpu` is
 `unavailable` with reason `counter_not_sampled`; with `every_row` it is
 computed as before.
+
+## 7. Milestone 6 additions (hooks and trace correlation)
+
+Additive. Each field appears only when its feature is used. Sessions
+without hooks write exactly the records of Milestone 5, plus `mode_source`.
+
+| Where | Field | Meaning |
+|---|---|---|
+| `config.measurement` | `mode_source` | who chose `requested_mode`: `caller`, `default` (the entry point's default) or `aep_run`. Absent in sessions written before M6 |
+| `config` | `hooks` | `module.Class` of each hook passed to `Session(hooks=...)`; absent without hooks |
+| `span` | `external_parent` | root spans only, when a hook supplied an external trace context at the span's start: `{system, trace_id, span_id, sampled?}`. The span's `trace_id` is then the external trace's. Absent otherwise |
+| `session_end` | `n_hook_errors` | hook calls that raised (never propagated to the workload); present when hooks were configured |
+
+`run.json` (`aep run`) gains `measurement.mode_source`: `default` when
+`--mode` was not given, else `caller`.
+
+`external_parent` refers to a span the profiler did not record. Accounting
+ignores it: the span is a root (`depth` 0) and `parent_missing` stays false.
+Exporters use it to attach the span to the external trace
+([OPENTELEMETRY.md](OPENTELEMETRY.md)).
+
+Attributes added with `Session.bind(**attributes)` are ordinary span
+`attributes`; the span's own attributes win on a key clash.
 
 ## Reading v1 as v2
 

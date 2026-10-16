@@ -153,9 +153,26 @@ def resolve_mode(requested, disturbance=None):
 	                 f"counter reads not enabled without evidence they are harmless here")
 
 
-def measurement_config(mode, requested, reason, disturbance, timeline=None):
-	"""The `config.measurement` block of a session header."""
-	return {
+#: Who chose the requested mode (Milestone 6): the caller passed it, the
+#: entry point's default applied, or `aep run` configured the session.
+MODE_SOURCE_CALLER = "caller"
+MODE_SOURCE_DEFAULT = "default"
+MODE_SOURCE_AEP_RUN = "aep_run"
+
+#: Session's default mode, kept for compatibility (docs/MEASUREMENT_MODES.md
+#: "Migrating towards conservative defaults").
+SESSION_DEFAULT_MODE = MODE_DIRECT
+SESSION_DEFAULT_REASON = ("default: Session's default mode (direct, per-span counter reads), "
+                          "kept for compatibility; pass mode= to choose "
+                          "(docs/MEASUREMENT_MODES.md)")
+
+
+def measurement_config(mode, requested, reason, disturbance, timeline=None, source=None):
+	"""The `config.measurement` block of a session header.
+
+	`mode_source` (Milestone 6) is added when `source` is given.
+	"""
+	out = {
 		"model_version": MEASUREMENT_MODEL_VERSION,
 		"mode": mode,
 		"requested_mode": requested,
@@ -166,6 +183,9 @@ def measurement_config(mode, requested, reason, disturbance, timeline=None):
 		"timeline": timeline,
 		"counter_disturbance": (disturbance or CounterDisturbance.unknown()).to_dict(),
 	}
+	if source is not None:
+		out["mode_source"] = source
+	return out
 
 
 # --------------------------------------------------------------------------

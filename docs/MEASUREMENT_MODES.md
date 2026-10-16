@@ -63,10 +63,16 @@ report.
 
 | Entry point | Default | Changed in M5? |
 |---|---|---|
-| `Session(...)` (SDK) | `mode="direct"` | no: the behaviour of every earlier session; the header now records it |
+| `Session(...)` (SDK) | `direct` | no: the behaviour of every earlier session. Since M6 the header says the mode was defaulted (`mode_source: "default"`) |
+| `Session.from_env(...)` | under `aep run`: `aep run`'s mode (`mode_source: "aep_run"`); on its own: `default_mode=` if given (M6), else as `Session` | — |
 | `aep run` | `--mode auto` (so `sampled` unless a hardware report says `NOT_DETECTED`); sampler power 10 Hz, counter at boundaries | **yes**: M3 read the counter per span and on every sampler row |
 | `aep sample` / `sampling.Sampler` | counter on every row | no; new `--counter-hz` / `counter_hz=` |
 | `aep attribute` (v1 and v2), `aep report` | unchanged for existing inputs | new sections only for inputs that declare M5 provenance |
+
+`mode_source` (M6) records who chose the requested mode: `caller` (passed
+explicitly, including `default_mode=`), `default` (an entry point's default),
+`aep_run` (a session configured by `aep run`). In `run.json`, `default` means
+`aep run` was not given `--mode`.
 
 ## Hardware-dependent decisions
 
@@ -83,7 +89,7 @@ report.
 ## Recorded provenance
 
 Session header `config.measurement` (model version 2):
-`mode`, `requested_mode`, `mode_reason`, `span_counter_reads`, `semantics`,
+`mode`, `requested_mode`, `mode_reason`, `mode_source` (M6), `span_counter_reads`, `semantics`,
 `timeline` (`power_hz`, `power_api`, `counter_policy`,
 `counter_every_n_rows`, `counter_hz_effective`), `counter_disturbance`
 (`verdict`, `source`, `retained_median`, `read_hz`, `measured_at_unix_s`,
@@ -116,6 +122,29 @@ same `timeline` block. Field definitions: [SCHEMA_V2.md](SCHEMA_V2.md).
 - **Existing artifacts** are unchanged and readable. Reports mark them
   `MEASUREMENT_NOT_RECORDED` and, because their counter-read rate is not
   known to be harmless, `COUNTER_DISTURBANCE_UNKNOWN`.
+
+## Migrating towards conservative defaults (proposal, M6)
+
+The two entry points disagree: `aep run` is conservative (`auto`, so
+`sampled` without evidence), while `Session` still reads the counter per
+span by default. Changing `Session`'s default silently would change what
+existing code measures (per-span GPU values would turn from measured to
+estimated), so M6 does **not** change it. It makes the default visible and
+gives a path:
+
+| Stage | What changes | Status |
+|---|---|---|
+| 1. Visible (M6) | Headers record `mode_source`. A defaulted session's `mode_reason` says so. Reports warn `DIRECT_MODE_BY_DEFAULT` when `direct` came from the default on a host not shown to be undisturbed. `Session.from_env(default_mode=...)` lets programs be conservative on their own and still follow `aep run`. Examples pass a mode explicitly. | **done** |
+| 2. Announced (next minor release, 0.3) | `Session()` without `mode=` emits a `FutureWarning` naming the coming default and how to keep `direct` (`mode="direct"`). Nothing measured changes. | proposed |
+| 3. Switched (the release after, 0.4) | `Session()` defaults to `auto`: `direct` only with a `NOT_DETECTED` disturbance verdict, otherwise `sampled`. `mode_source` stays `default`, so artifacts say which default applied. `mode="direct"` keeps today's behaviour. | proposed |
+
+The user decides when stages 2 and 3 happen. Until stage 3, code that wants
+today's behaviour forever should say `mode="direct"`, and code that wants the
+conservative behaviour now should say `mode="auto"` (with
+`disturbance=CounterDisturbance.from_hardware_report(...)` where a report
+exists). Tests pin every explicitly selected mode, its recorded
+`mode_source`, and the warning (`tests/test_session_hooks.py`,
+`tests/test_measurement_modes.py`).
 
 ## Measured effect of the modes (development host)
 

@@ -860,6 +860,100 @@ of averaged power (estimates of short spans and steps are biased); hybrid's
 1 Hz rate retains 0.984 ± 0.019 here, consistent with the ~1% the M4 model
 predicts but not resolved from zero.
 
+## Milestone 6: OpenTelemetry integration and SDK hardening
+
+Design and attribute mapping: [OPENTELEMETRY.md](OPENTELEMETRY.md). LangGraph
+evaluation: [LANGGRAPH.md](LANGGRAPH.md). Default-mode migration:
+[MEASUREMENT_MODES.md](MEASUREMENT_MODES.md#migrating-towards-conservative-defaults-proposal-m6).
+New fields: [SCHEMA_V2.md](SCHEMA_V2.md) section 7.
+
+**Changes.**
+
+- `Session(hooks=[...])`: a generic, dependency-free extension point
+  (`trace_context()`, `on_span_start(span)`, `on_span_end(span, record)`).
+  Hooks run before the span's counter read and clocks and after its end
+  clocks, counter read and write. Failures are counted
+  (`session_end.n_hook_errors`), never raised. A root span can join an
+  external trace (`external_parent`, its `trace_id`).
+- `Session.bind(**attributes)`: attributes for every span opened in a
+  context, following asyncio tasks, isolated per session.
+- `SpanHandle.name`, `.session_id`, `.external_parent`.
+- `agent_energy_profiler.otel` (`[otel]` extra, never imported by the core):
+  `Correlation(propagate=False)` hook; `span_attributes`,
+  `to_readable_spans`, `export_spans`, `JsonLinesSpanExporter`. `aep
+  otel-export` (`--endpoint` needs the `[otlp]` extra).
+- `analyze(spans_or_session, power=...)` (re-exported at the package top
+  level): attribute and build the report in one call.
+  `attribution_v2.attribute_run` is the former body of `main` (same output;
+  the golden test checks it).
+- Mode provenance: `Session()` without `mode=` still runs `direct`, but its
+  header now says `mode_source: "default"` and its `mode_reason` says it was
+  defaulted. Before M6 it claimed "requested explicitly", which was wrong for
+  a defaulted session. `Session.from_env(default_mode=...)`. `aep run`
+  records `mode_source` (`default` / `caller`). Report warning
+  `DIRECT_MODE_BY_DEFAULT`; the text report shows the source.
+- Examples pass `default_mode="direct"` explicitly (standalone runs have no
+  sampler; under `aep run` its mode applies). New example
+  `examples/otel_tracing/`.
+
+**Behaviour changes.** None to measured values or to any existing field's
+meaning. New sessions carry `mode_source`, and a defaulted session's
+`mode_reason` text changed (see above). Reports of defaulted-direct sessions
+gain one warning. Sessions with hooks carry the new fields.
+
+**LangGraph.** No integration module: explicit `session.trace` /
+`session.span` in node functions, pinned by `tests/test_langgraph.py`
+against LangGraph 1.2.15 (sync and async graphs, parallel branches, config
+injection). Callbacks were rejected for now (labels would be inferred from
+node names; sync handlers run on another thread in async graphs).
+
+**Validation on this machine (RTX 4090, WSL2, driver 610.88, Python 3.12).**
+
+| Check | Result |
+|---|---|
+| Full suite (`.venv`, OpenTelemetry 1.45.1, no LangGraph) | 515 passed, 10 skipped |
+| LangGraph 1.2.15 venv: `test_langgraph`, `test_otel`, `test_session_hooks` | 43 passed |
+| v1 golden fixtures, v2 golden fixture | byte-identical (`attribute_run` refactor included) |
+| Frozen research runs (v1 attribution) | identical (3 runs) |
+| Clean wheel: minimal / `[test,gpu]` / `[otlp]` / OpenTelemetry 1.20.0 | 403 passed, 61 skipped / 470 passed, 11 skipped / 421 passed, 60 skipped / 421 passed, 60 skipped; no failures. Minimal install: `import agent_energy_profiler.otel` and `aep otel-export` fail with the extra's name |
+| `aep otel-export --endpoint` against a local OTLP/HTTP receiver | 1 request to `/v1/traces`, `application/x-protobuf`, 20 spans decoded; measured GPU spans carry `energy_j`, the unmeasured one only status and reason |
+| Example `otel_tracing` on the GPU | standalone: 3 traces, application span nested under a profiler span; under `aep run` (`auto` → `sampled`), then `aep otel-export`: 12 spans, `mode_source` `aep_run` |
+
+**Overhead** (`tools/benchmark_overhead.py`, empty spans, median of 5 × 20 000):
+
+| Configuration | No GPU reads | NVML, `direct` |
+|---|---|---|
+| no hooks | 14.4 µs | 2486 µs |
+| `bind` active | 15.1 µs | — |
+| `otel.Correlation()` | 17.5 µs | 2495 µs |
+| `otel.Correlation(propagate=True)` | 21.4 µs | 2487 µs |
+
+`otel.export_spans`: 50 000 attributed spans in 1.99 s (~25 000/s), 92 MB
+peak RSS.
+
+**Tests added.** `tests/test_session_hooks.py` (24): hook order relative to
+counter reads and the write; identical energy and read counts with and
+without hooks; LIFO end hooks; failing and malformed hooks counted, never
+raised; external trace context (root only, explicit trace id wins,
+malformed contexts rejected, accounting unaffected); `bind` (nesting,
+precedence, asyncio tasks, per-session isolation, threads); mode provenance
+for the default, every explicit mode, `from_env` with and without `aep run`,
+`default_mode`; the `DIRECT_MODE_BY_DEFAULT` warning; `analyze` equals `aep
+attribute` + `report.build` and reproduces the v2 golden output; the core
+imports no OpenTelemetry. `tests/test_otel.py` (18): correlation,
+propagation (nesting, restoration, concurrent tasks, unsampled traces),
+unchanged measurement, no global configuration, export of the v2 golden run
+(ids, hierarchy, times, status, every energy/estimate/total/accounting
+attribute against the record, valid attribute types), raw and v1 input, the
+CLI, the example, and an end-to-end application + profiler trace tree.
+`tests/test_langgraph.py` (2). `tests/test_measurement_modes.py`:
+`mode_source` in `run.json` and the child session.
+
+**Not established.** Accuracy of any value: no external meter. RAPL has not
+been checked on physical hardware. The counter disturbance and the lag of
+averaged power stay as documented in M4/M5. OpenTelemetry attributes change
+none of this.
+
 ## Remaining references to the research repository
 
 The research repository is not a dependency: no code imports it, no test
@@ -891,3 +985,4 @@ schema v1 and generic in role. Renaming them is a schema-v2 decision.
 | 0.2.0 + M3 (version not bumped) | Streaming v2 attribution (same output, ~5–9× less memory); `report.py`; `aep` CLI and `Session.from_env`; examples; `test` extra; v2 golden fixture from M2. No v1 or v2 output change. NVML counter-disturbance finding documented, not corrected. | identical: v1 fixtures, frozen runs, and the v2 fixture |
 | 0.2.0 + M4 (version not bumped) | NVML counter validation: diagnostics in `tools/nvml_diagnostics/`, raw results in `results/nvml_m4/`, `docs/NVML_COUNTER_VALIDATION.md`, opt-in `aep validate --counter-disturbance`, a note on the resolution probe's step. No measurement behaviour changed. | identical: v1 fixtures, frozen runs, and the v2 fixture |
 | 0.2.0 + M5 (version not bumped) | Measurement modes (`direct`/`sampled`/`hybrid`/`auto`), sampler counter policies, measurement provenance (model version 2), run counter and interval diagnostics, disturbance-aware report warnings; `aep run` defaults to `auto`. Existing fields keep their meaning. | identical: v1 fixtures, frozen runs, and the v2 fixture |
+| 0.2.0 + M6 (version not bumped) | Session hooks, `bind`, external trace parent; optional `otel` module and `aep otel-export`; `analyze()`; `mode_source` provenance and the `DIRECT_MODE_BY_DEFAULT` warning (Session's default mode unchanged); LangGraph guidance. No measured value or existing field meaning changed. | identical: v1 fixtures, frozen runs, and the v2 fixture |

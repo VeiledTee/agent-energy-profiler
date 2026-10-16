@@ -46,7 +46,9 @@ def main():
 	args = ap.parse_args()
 	n = int(1_000_000 * args.scale)
 
-	with Session.from_env(args.out, overwrite=True,
+	# Under `aep run`, its measurement mode applies. On its own there is no
+	# sampler, so per-span counter reads (direct) are the only GPU measurement.
+	with Session.from_env(args.out, overwrite=True, default_mode="direct",
 	                      attributes={"example": "cpu_workflow", "scale": args.scale}) as session:
 		with session.span("pipeline:run"):
 			with session.span("data:generate") as s:

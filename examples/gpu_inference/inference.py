@@ -94,7 +94,10 @@ def main():
 	if device.type == "cuda":
 		attrs["gpu"] = torch.cuda.get_device_name(device)
 
-	with Session.from_env(args.out, overwrite=True, attributes=attrs) as session:
+	# Under `aep run`, its measurement mode applies. On its own there is no
+	# sampler, so per-span counter reads (direct) are the only GPU measurement.
+	with Session.from_env(args.out, overwrite=True, default_mode="direct",
+	                      attributes=attrs) as session:
 		with session.span("model:load") as s:
 			if args.hf_model:
 				from transformers import AutoModelForCausalLM, AutoTokenizer

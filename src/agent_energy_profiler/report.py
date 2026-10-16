@@ -443,6 +443,12 @@ def _warnings(acc, rep):
 		_warn(w, "COUNTER_DISTURBED", "Counter disturbance was DETECTED on this host and the "
 		      "counter was read often during this run: measured GPU values are biased low "
 		      "by an amount that depends on the read rate. Prefer --mode sampled or hybrid.")
+	if (meas.get("mode_source") == m.MODE_SOURCE_DEFAULT and meas.get("span_counter_reads")
+	        and verdict != "NOT_DETECTED"):
+		_warn(w, "DIRECT_MODE_BY_DEFAULT", f"The session used Session's default mode "
+		      f"(direct: per-span GPU counter reads) without a disturbance test showing "
+		      f"that is harmless here (verdict {verdict}). Pass mode='auto' with a hardware "
+		      f"report, or choose a mode explicitly (docs/MEASUREMENT_MODES.md).")
 	if meas.get("recorded") and not meas.get("span_counter_reads"):
 		_warn(w, "SPAN_ESTIMATES_ONLY", f"Mode {meas.get('mode')}: spans were not measured "
 		      f"with the GPU counter. Per-span GPU values are estimates (integrated averaged "
@@ -565,6 +571,36 @@ def build(path, resolution=None):
 	return rep
 
 
+def analyze(spans, power=None, out_dir=None, resolution_report=None, allow_uncovered=False):
+	"""Attribute a recorded session and return its report.
+
+	    with Session("run/spans.jsonl", sampler=Sampler("run/power.csv", ...)) as s:
+	        ...
+	    rep = analyze(s)                  # or analyze("run/spans.jsonl", power=...)
+	    print(report.render_text(rep))
+
+	`spans` is a closed Session or a raw spans file. A Session's own sampler
+	file is used as `power` unless one is given. Writes spans_attributed.jsonl
+	and session_summary.json to `out_dir` (default: beside the spans file),
+	exactly as `aep attribute` does, then builds the report from them.
+	"""
+	from .session import Session
+	if isinstance(spans, Session):
+		if not spans.closed:
+			raise RuntimeError("analyze() needs a closed Session (leave its `with` block first)")
+		if power is None and spans.sampler is not None:
+			power = spans.sampler.power_file
+		spans = spans.path
+	_, kind = classify(spans)
+	if kind == "attributed":
+		raise ValueError(f"{spans} is already attributed; use report.build()")
+	out_dir = out_dir or os.path.dirname(os.path.abspath(spans))
+	attribution_v2.attribute_run(spans, out_dir, power=power or "",
+	                             resolution_report=resolution_report or "",
+	                             allow_uncovered=allow_uncovered)
+	return build(os.path.join(out_dir, "spans_attributed.jsonl"))
+
+
 def _window_section(schema, record_file, summary):
 	"""Independent whole-window measurement, if the attribution produced one."""
 	if schema == 2:
@@ -654,8 +690,10 @@ def render_text(rep, top=20):
 	if meas.get("recorded"):
 		tl = meas.get("timeline_declared") or meas.get("timeline") or {}
 		dist = meas.get("counter_disturbance") or {}
-		L.append(f"measurement  mode {meas.get('mode')} (requested {meas.get('requested_mode')}); "
-		         f"per-span GPU counter reads {'ON' if meas.get('span_counter_reads') else 'off'}")
+		source = f", {meas['mode_source']}" if meas.get("mode_source") else ""
+		L.append(f"measurement  mode {meas.get('mode')} (requested {meas.get('requested_mode')}"
+		         f"{source}); per-span GPU counter reads "
+		         f"{'ON' if meas.get('span_counter_reads') else 'off'}")
 		if tl:
 			L.append(f"             sampler: power every row at {tl.get('power_hz')} Hz "
 			         f"({tl.get('power_api')}); GPU counter {tl.get('counter_policy')} "

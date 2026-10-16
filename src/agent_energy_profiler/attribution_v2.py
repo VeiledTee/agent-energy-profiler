@@ -388,33 +388,46 @@ def main(argv=None):
 	                help="mark spans outside the timeline not_covered instead "
 	                     "of refusing to attribute the run")
 	args = ap.parse_args(argv)
+	try:
+		summary = attribute_run(args.spans, args.out_dir, power=args.power,
+		                        power_meta=args.power_meta,
+		                        resolution_report=args.resolution_report,
+		                        allow_uncovered=args.allow_uncovered)
+	except ValueError as e:
+		print(f"ERROR: {e}", file=sys.stderr)
+		return 1
+	print(f"{summary['n_spans']} spans attributed -> {args.out_dir}")
+	return 0
 
-	header = schema_v2.session_header(args.spans)
-	if args.resolution_report:
-		resolution = m.Resolution.from_hardware_report(args.resolution_report)
+
+def attribute_run(spans, out_dir, power="", power_meta="", resolution_report="",
+                  allow_uncovered=False):
+	"""Attribute a spans file into out_dir (spans_attributed.jsonl and
+	session_summary.json); returns the summary. What `aep attribute` runs.
+
+	Raises ValueError when spans fall outside the timeline (unless
+	allow_uncovered); nothing is written then.
+	"""
+	header = schema_v2.session_header(spans)
+	if resolution_report:
+		resolution = m.Resolution.from_hardware_report(resolution_report)
 	elif header:
 		resolution = m.Resolution.from_dict(header["config"].get("resolution"))
 	else:
 		resolution = m.Resolution.unknown()
-	timeline = Timeline(args.power, args.power_meta or None) if args.power else None
+	timeline = Timeline(power, power_meta or None) if power else None
 
-	os.makedirs(args.out_dir, exist_ok=True)
-	out_path = os.path.join(args.out_dir, "spans_attributed.jsonl")
-	try:
-		summary = attribute_file(args.spans, out_path, timeline, resolution,
-		                         args.allow_uncovered)
-	except ValueError as e:
-		print(f"ERROR: {e}", file=sys.stderr)
-		return 1
-	n_rows = summary["n_spans"]
+	os.makedirs(out_dir, exist_ok=True)
+	out_path = os.path.join(out_dir, "spans_attributed.jsonl")
+	summary = attribute_file(spans, out_path, timeline, resolution, allow_uncovered)
 	summary.update({
 		"schema_version": schema_v2.SCHEMA_VERSION,
-		"input": os.path.abspath(args.spans),
+		"input": os.path.abspath(spans),
 		"input_schema": 2 if header else 1,
 		"session": header,
 		"resolution": resolution.to_dict(),
 		"timeline": None if timeline is None else {
-			"power_file": os.path.abspath(args.power),
+			"power_file": os.path.abspath(power),
 			"samples": len(timeline.ts),
 			"backward_steps": timeline.backward_steps,
 			"rapl_columns_without_range": timeline.n_rapl_columns_without_range,
@@ -428,10 +441,9 @@ def main(argv=None):
 		summary["run_counter"] = timeline.run_counter(window.get("start_unix_s"),
 		                                              window.get("end_unix_s"))
 		summary["counter_intervals"] = timeline.counter_intervals()
-	with open(os.path.join(args.out_dir, "session_summary.json"), "w") as f:
+	with open(os.path.join(out_dir, "session_summary.json"), "w") as f:
 		json.dump(summary, f, indent=2)
-	print(f"{n_rows} spans attributed -> {args.out_dir}")
-	return 0
+	return summary
 
 
 if __name__ == "__main__":

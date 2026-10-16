@@ -429,6 +429,11 @@ class TestAepRunModes(Tmp):
 		run, header, rows, stdout = self.aep_run()
 		self.assertEqual(run["measurement"]["mode"], "sampled")
 		self.assertEqual(header["config"]["measurement"]["requested_mode"], "auto")
+		# M6: who chose. The example's own default_mode="direct" does not apply
+		# under aep run.
+		self.assertEqual(run["measurement"]["mode_source"], "default")
+		self.assertEqual(header["config"]["measurement"]["mode_source"], "aep_run")
+		self.assertEqual(header["config"]["measurement"]["mode"], "sampled")
 		self.assertEqual(header["config"]["measurement"]["timeline"]["counter_policy"],
 		                 "boundaries")
 		filled = [r for r in rows if r["gpu0_energy_mj"]]
@@ -458,6 +463,8 @@ class TestAepRunModes(Tmp):
 		run, header, rows, stdout = self.aep_run("--mode", "hybrid", "--counter-hz", "10")
 		self.assertEqual(run["measurement"]["timeline"]["counter_every_n_rows"], 5)
 		self.assertIn("RUN COUNTER MEASUREMENT", stdout)
+		self.assertEqual(run["measurement"]["mode_source"], "caller")
+		self.assertEqual(header["config"]["measurement"]["mode"], "hybrid")
 
 
 if __name__ == "__main__":

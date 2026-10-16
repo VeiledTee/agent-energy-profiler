@@ -5,6 +5,7 @@
     aep attribute <spans|events> --power power.csv --out-dir out/
     aep report <run dir or file> [--format text|json|csv]
     aep export <run dir or file> --out-dir exported/
+    aep otel-export <run dir or file> [--endpoint URL | --out spans.otel.jsonl]
     aep sample --out power.csv             the sampler on its own
 
 What `aep run` can and cannot see
@@ -111,7 +112,9 @@ def cmd_run(args, rest):
 	resolution = _resolution(args)
 	disturbance = (m.CounterDisturbance.from_hardware_report(args.hardware_report)
 	               if args.hardware_report else m.CounterDisturbance.unknown())
-	mode, mode_reason = m.resolve_mode(args.mode, disturbance)
+	mode_source = m.MODE_SOURCE_DEFAULT if args.mode is None else m.MODE_SOURCE_CALLER
+	requested_mode = args.mode or m.MODE_AUTO
+	mode, mode_reason = m.resolve_mode(requested_mode, disturbance)
 	counter_hz = (args.counter_hz if args.counter_hz is not None
 	              else m.MODES[mode]["timeline_counter_hz"])
 	if args.no_sampler:
@@ -127,7 +130,7 @@ def cmd_run(args, rest):
 		"AEP_RESOLUTION": json.dumps(resolution.to_dict()),
 		"AEP_GPU": "off" if args.gpu == "off" else "auto",
 		"AEP_RUN_ATTRIBUTES": json.dumps(attributes),
-		"AEP_MEASUREMENT": json.dumps({"mode": mode, "requested_mode": args.mode,
+		"AEP_MEASUREMENT": json.dumps({"mode": mode, "requested_mode": requested_mode,
 		                               "mode_reason": mode_reason,
 		                               "disturbance": disturbance.to_dict(),
 		                               "timeline": timeline}),
@@ -169,7 +172,8 @@ def cmd_run(args, rest):
 	instrumented = os.path.exists(spans_file)
 	run = {
 		"aep_run_version": 2,
-		"measurement": m.measurement_config(mode, args.mode, mode_reason, disturbance, timeline),
+		"measurement": m.measurement_config(mode, requested_mode, mode_reason, disturbance,
+		                                    timeline, source=mode_source),
 		"profiler_version": __version__,
 		"command": command,
 		"exit_code": proc.returncode,
@@ -337,6 +341,55 @@ def cmd_export(args, rest):
 	return 0
 
 
+def cmd_otel_export(args, rest):
+	"""Spans as OpenTelemetry spans: OTLP/HTTP, console, or JSON lines."""
+	try:
+		from . import otel
+		from opentelemetry.sdk.resources import Resource
+	except ImportError as e:
+		hint = "agent-energy-profiler[otel]"
+		print(f"aep otel-export: {e}" + ("" if hint in str(e) else f" (pip install '{hint}')"),
+		      file=sys.stderr)
+		return 2
+	from . import report
+	try:
+		path = report.locate(args.input)
+		_, kind = report.classify(path)
+	except (OSError, ValueError) as e:
+		print(f"aep otel-export: {e}", file=sys.stderr)
+		return 2
+	if kind != "attributed":
+		print("aep otel-export: the input is not attributed, so only in-band GPU energy is "
+		      "exported (no CPU/DRAM, estimates, totals or accounting). Run `aep attribute` "
+		      "first for the full record.", file=sys.stderr)
+	if args.endpoint:
+		try:
+			from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+		except ImportError:
+			print("aep otel-export: --endpoint needs the OTLP exporter: "
+			      "pip install 'agent-energy-profiler[otlp]'", file=sys.stderr)
+			return 2
+		exporter = OTLPSpanExporter(endpoint=args.endpoint)
+		where = args.endpoint
+	elif args.out:
+		exporter = otel.JsonLinesSpanExporter(args.out)
+		where = args.out
+	else:
+		from opentelemetry.sdk.trace.export import ConsoleSpanExporter
+		exporter = ConsoleSpanExporter()
+		where = "stdout"
+	resource = Resource.create({"service.name": args.service_name})
+	try:
+		result = otel.export_spans(path, exporter, resource=resource)
+	finally:
+		exporter.shutdown()
+	print(f"aep otel-export: {result['n_spans']} spans -> {where} "
+	      f"({result['n_batches']} batches, {result['n_failed_batches']} failed"
+	      + (f", {result['n_skipped']} without a start time skipped" if result["n_skipped"]
+	         else "") + ")", file=sys.stderr)
+	return 1 if result["n_failed_batches"] else 0
+
+
 # --------------------------------------------------------------------------
 
 def build_parser():
@@ -363,7 +416,7 @@ def build_parser():
 	                   "measured; per-operation energy only for spans the program records "
 	                   "with Session.from_env().")
 	p.add_argument("--out-dir", default="", help="default: aep-runs/<timestamp>")
-	p.add_argument("--mode", choices=("auto", "direct", "sampled", "hybrid"), default="auto",
+	p.add_argument("--mode", choices=("auto", "direct", "sampled", "hybrid"), default=None,
 	               help="measurement mode (default auto: per-span GPU counter reads only "
 	                    "if a disturbance test from --hardware-report found no effect; "
 	                    "otherwise sampled). See docs/MEASUREMENT_MODES.md")
@@ -414,6 +467,19 @@ def build_parser():
 	p.add_argument("input")
 	p.add_argument("--out-dir", required=True)
 	p.set_defaults(func=cmd_export)
+
+	p = sub.add_parser("otel-export", help="send spans to OpenTelemetry (needs the otel extra)",
+	                   description="Convert recorded spans to OpenTelemetry spans with energy "
+	                   "attributes (docs/OPENTELEMETRY.md). Default destination: the console.")
+	p.add_argument("input", help="run directory or spans file (attributed preferred)")
+	dest = p.add_mutually_exclusive_group()
+	dest.add_argument("--endpoint", default="",
+	                  help="OTLP/HTTP traces endpoint, e.g. http://localhost:4318/v1/traces "
+	                       "(needs the otlp extra)")
+	dest.add_argument("--out", default="", help="write one JSON span per line to this file")
+	p.add_argument("--service-name", default="agent-energy-profiler",
+	               help="service.name of the exported spans' resource")
+	p.set_defaults(func=cmd_otel_export)
 	return ap
 
 

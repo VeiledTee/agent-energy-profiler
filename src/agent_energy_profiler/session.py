@@ -37,6 +37,22 @@ Concurrency model
 Recording is best-effort like v1: an instrumentation failure is counted in
 the session_end record and never raised into the workload. Exceptions raised
 BY the workload always propagate unchanged.
+
+Hooks (Milestone 6)
+-------------------
+`Session(hooks=[...])` lets an integration observe spans without the core
+knowing about it (agent_energy_profiler.otel is one). A hook may define any of:
+
+    trace_context()             -> {"trace_id", "span_id", ...} or None
+        consulted for a root span (no parent, no explicit trace_id): the span
+        joins that external trace and records it as `external_parent`
+    on_span_start(span)         span is a SpanHandle; called before the
+                                span's GPU counter read and clocks
+    on_span_end(span, record)   called after the record is written (record
+                                is None if it could not be built)
+
+Hooks run outside both the span's duration and its counter window. A hook
+that raises is counted (`n_hook_errors`) and never breaks the workload.
 """
 
 import contextvars
@@ -60,6 +76,19 @@ from .schema import Status, is_known_status
 #: {session_id: _Span} of the innermost open span per session, per context.
 _ACTIVE = contextvars.ContextVar("aep_v2_active_spans", default=None)
 
+#: {session_id: {attribute: value}} bound by Session.bind(), per context.
+_BOUND = contextvars.ContextVar("aep_v2_bound_attributes", default=None)
+
+_HEX = frozenset("0123456789abcdef")
+
+
+def _hex_id(value, length):
+	"""value if it is a non-zero lowercase hex id of `length` chars, else None."""
+	if (isinstance(value, str) and len(value) == length and set(value) <= _HEX
+	        and value.strip("0")):
+		return value
+	return None
+
 #: Every open span in this process, for cross-session overlap DETECTION only.
 _open_lock = threading.Lock()
 _open_spans = set()
@@ -82,6 +111,20 @@ class SpanHandle:
 	@property
 	def parent_span_id(self):
 		return self._span.parent_span_id
+
+	@property
+	def name(self):
+		"""The operation label the caller gave this span."""
+		return self._span.name
+
+	@property
+	def session_id(self):
+		return self._span.session.session_id
+
+	@property
+	def external_parent(self):
+		"""The external trace parent of a root span (see hooks), or None."""
+		return self._span.external_parent
 
 	def set_attribute(self, key, value):
 		self._span.attributes[str(key)] = value
@@ -126,7 +169,7 @@ class _Span:
 	             "operation_type", "attributes", "input_tokens", "output_tokens",
 	             "status", "status_explicit", "start_unix", "start_mono",
 	             "gpu_start", "other_sessions", "token", "thread_id", "task",
-	             "__weakref__")
+	             "external_parent", "__weakref__")
 
 
 class _SpanScope:
@@ -156,6 +199,37 @@ class _SpanScope:
 		return self.__exit__(exc_type, exc, tb)
 
 
+class _BindScope:
+	"""Context manager adding attributes to every span opened inside it."""
+
+	def __init__(self, session_id, attributes):
+		self._session_id = session_id
+		self._attributes = attributes
+		self._token = None
+
+	def __enter__(self):
+		current = _BOUND.get() or {}
+		merged = dict(current.get(self._session_id) or {})
+		merged.update(self._attributes)
+		new = dict(current)
+		new[self._session_id] = merged
+		self._token = _BOUND.set(new)
+		return self
+
+	def __exit__(self, exc_type, exc, tb):
+		try:
+			_BOUND.reset(self._token)
+		except ValueError:
+			pass  # exited in another context; that context's copy is discarded
+		return False
+
+	async def __aenter__(self):
+		return self.__enter__()
+
+	async def __aexit__(self, exc_type, exc, tb):
+		return self.__exit__(exc_type, exc, tb)
+
+
 def _task_name():
 	asyncio = sys.modules.get("asyncio")
 	if asyncio is None:
@@ -177,21 +251,24 @@ class Session:
 	            session so the hardware timeline brackets every span
 	overwrite   by default an existing file is an error: two sessions must
 	            never share one file
-	mode        measurement mode (measurement.MODES): "direct" (the default,
-	            and the behaviour of every session before Milestone 5) reads
-	            the GPU counter at each span's boundaries; "sampled" and
-	            "hybrid" never read it per span, leaving GPU span energy to
-	            estimates; "auto" picks from `disturbance` (resolve_mode)
+	mode        measurement mode (measurement.MODES): "direct" reads the GPU
+	            counter at each span's boundaries; "sampled" and "hybrid"
+	            never read it per span, leaving GPU span energy to estimates;
+	            "auto" picks from `disturbance` (resolve_mode). Omitted: direct,
+	            the behaviour of every session before Milestone 5, recorded
+	            with mode_source "default" (docs/MEASUREMENT_MODES.md)
 	disturbance measurement.CounterDisturbance: what is known about counter
 	            disturbance on this host. Recorded in the header; UNKNOWN if
 	            omitted, and never assumed to mean "not disturbed"
 	timeline    description of a hardware timeline run outside this session
 	            (as `aep run` does), recorded in the header
+	hooks       integrations observing spans (see "Hooks" above), e.g.
+	            agent_energy_profiler.otel.Correlation()
 	"""
 
 	def __init__(self, path, *, attributes=None, gpu="auto", resolution=None,
-	             sampler=None, overwrite=False, mode=m.MODE_DIRECT, disturbance=None,
-	             timeline=None):
+	             sampler=None, overwrite=False, mode=None, disturbance=None,
+	             timeline=None, hooks=()):
 		self.path = path
 		self.session_id = secrets.token_hex(16)
 		self.attributes = dict(attributes or {})
@@ -199,8 +276,22 @@ class Session:
 		if not isinstance(self.resolution, m.Resolution):
 			raise TypeError("resolution must be a measurement.Resolution")
 		self.disturbance = disturbance or m.CounterDisturbance.unknown()
-		self.requested_mode = mode
-		self.mode, self.mode_reason = m.resolve_mode(mode, self.disturbance)
+		if mode is None:
+			self.requested_mode = m.SESSION_DEFAULT_MODE
+			self.mode, self.mode_reason = m.SESSION_DEFAULT_MODE, m.SESSION_DEFAULT_REASON
+			self.mode_source = m.MODE_SOURCE_DEFAULT
+		else:
+			self.requested_mode = mode
+			self.mode, self.mode_reason = m.resolve_mode(mode, self.disturbance)
+			self.mode_source = m.MODE_SOURCE_CALLER
+		self.hooks = tuple(hooks or ())
+		self._hook_context = [h.trace_context for h in self.hooks
+		                      if callable(getattr(h, "trace_context", None))]
+		self._hook_start = [h.on_span_start for h in self.hooks
+		                    if callable(getattr(h, "on_span_start", None))]
+		self._hook_end = [h.on_span_end for h in self.hooks
+		                  if callable(getattr(h, "on_span_end", None))]
+		self.n_hook_errors = 0
 		self._timeline = timeline
 		self.sampler = sampler
 		self._overwrite = overwrite
@@ -226,7 +317,7 @@ class Session:
 	ENV_MEASUREMENT = "AEP_MEASUREMENT"
 
 	@classmethod
-	def from_env(cls, default_path=None, *, attributes=None, **kwargs):
+	def from_env(cls, default_path=None, *, attributes=None, default_mode=None, **kwargs):
 		"""A Session configured by `aep run`, or by `default_path` when the
 		program runs on its own.
 
@@ -235,6 +326,11 @@ class Session:
 		merged under `attributes`). Keyword arguments override the environment.
 		The sampler is not started here: under `aep run` it belongs to the
 		parent process, which brackets the whole program with it.
+
+		`default_mode` (Milestone 6) is the mode to use when neither `mode=`
+		nor `aep run` gives one, i.e. when the program runs on its own; it is
+		recorded as the caller's choice. Without it, Session's own default
+		applies.
 		"""
 		path = os.environ.get(cls.ENV_SPANS_FILE) or default_path
 		if not path:
@@ -244,11 +340,16 @@ class Session:
 			kwargs["resolution"] = m.Resolution.from_dict(
 				json.loads(os.environ[cls.ENV_RESOLUTION]))
 		meas = None
+		mode_from_env = False
 		if os.environ.get(cls.ENV_MEASUREMENT):
 			meas = json.loads(os.environ[cls.ENV_MEASUREMENT])
-			kwargs.setdefault("mode", meas.get("mode", m.MODE_DIRECT))
+			mode_from_env = kwargs.get("mode") is None
+			if mode_from_env:
+				kwargs["mode"] = meas.get("mode", m.MODE_DIRECT)
 			kwargs.setdefault("disturbance", m.CounterDisturbance.from_dict(meas.get("disturbance")))
 			kwargs.setdefault("timeline", meas.get("timeline"))
+		elif kwargs.get("mode") is None and default_mode is not None:
+			kwargs["mode"] = default_mode
 		if "gpu" not in kwargs and os.environ.get(cls.ENV_GPU):
 			kwargs["gpu"] = False if os.environ[cls.ENV_GPU] == "off" else "auto"
 		merged = {}
@@ -256,11 +357,26 @@ class Session:
 			merged.update(json.loads(os.environ[cls.ENV_ATTRIBUTES]))
 		merged.update(attributes or {})
 		session = cls(path, attributes=merged, **kwargs)
-		if meas and session.mode == meas.get("mode"):
+		if meas and mode_from_env and session.mode == meas.get("mode"):
 			# keep how `aep run` chose the mode (e.g. "auto" and why)
 			session.requested_mode = meas.get("requested_mode", session.requested_mode)
 			session.mode_reason = meas.get("mode_reason", session.mode_reason)
+			session.mode_source = m.MODE_SOURCE_AEP_RUN
 		return session
+
+	def bind(self, **attributes):
+		"""Add `attributes` to every span of this session opened inside the
+		returned context manager (`with` or `async with`), in this task or
+		thread context and in tasks created from it.
+
+		For tagging work with a request or task id without an extra span:
+
+		    with session.bind(request_id=rid):
+		        handle(request)
+
+		A span's own attributes win over bound ones.
+		"""
+		return _BindScope(self.session_id, attributes)
 
 	# -- lifecycle --------------------------------------------------------
 
@@ -302,7 +418,7 @@ class Session:
 			except Exception:
 				pass
 			if os.getpid() == self._pid:
-				self._write({
+				end = {
 					"schema_version": schema_v2.SCHEMA_VERSION,
 					"record_type": schema_v2.SESSION_END,
 					"session_id": self.session_id,
@@ -312,7 +428,10 @@ class Session:
 					"n_foreign_process_writes_refused":
 						self.n_foreign_process_writes_refused,
 					"sampler_exit_code": self.sampler_exit_code,
-				}, force=True)
+				}
+				if self.hooks:
+					end["n_hook_errors"] = self.n_hook_errors
+				self._write(end, force=True)
 				try:
 					self._fh.close()
 				except Exception:
@@ -439,7 +558,7 @@ class Session:
 			sampler_cfg.update(self.sampler.describe())
 		timeline = ((self.sampler.describe().get("timeline") if self.sampler is not None
 		             else None) or self._timeline)
-		return {
+		record = {
 			"schema_version": schema_v2.SCHEMA_VERSION,
 			"record_type": schema_v2.SESSION_START,
 			"session_id": self.session_id,
@@ -456,10 +575,38 @@ class Session:
 				"sampler": sampler_cfg,
 				"measurement": m.measurement_config(
 					self.mode, self.requested_mode, self.mode_reason, self.disturbance,
-					timeline),
+					timeline, source=self.mode_source),
 			},
 			"attributes": self.attributes,
 		}
+		if self.hooks:
+			record["config"]["hooks"] = [f"{type(h).__module__}.{type(h).__qualname__}"
+			                             for h in self.hooks]
+		return record
+
+	def _hook_failed(self):
+		with self._lock:
+			self.n_hook_errors += 1
+
+	def _external_context(self):
+		"""The first valid external trace context a hook offers, or None."""
+		for get in self._hook_context:
+			try:
+				ctx = get()
+				if not ctx:
+					continue
+				trace_id = _hex_id(ctx.get("trace_id"), 32)
+				span_id = _hex_id(ctx.get("span_id"), 16)
+				if trace_id is None or span_id is None:
+					raise ValueError("malformed trace context")
+				out = {"system": str(ctx.get("system") or "external"),
+				       "trace_id": trace_id, "span_id": span_id}
+				if "sampled" in ctx:
+					out["sampled"] = bool(ctx["sampled"])
+				return out
+			except Exception:
+				self._hook_failed()
+		return None
 
 	def _begin(self, name, attributes, parent, trace_id):
 		if not self._started or self._closed:
@@ -473,11 +620,26 @@ class Session:
 		if parent_span is not None and parent_span.session is not self:
 			raise ValueError("parent belongs to a different session")
 		span.parent_span_id = parent_span.span_id if parent_span is not None else None
-		span.trace_id = (trace_id or (parent_span.trace_id if parent_span is not None
-		                              else secrets.token_hex(16)))
+		span.external_parent = None
+		if trace_id:
+			span.trace_id = trace_id
+		elif parent_span is not None:
+			span.trace_id = parent_span.trace_id
+		else:
+			external = self._external_context() if self._hook_context else None
+			if external is not None:
+				span.trace_id = external["trace_id"]
+				span.external_parent = external
+			else:
+				span.trace_id = secrets.token_hex(16)
 		span.name = name
 		span.operation_type, unknown = _labels.REGISTRY.resolve(name)
-		span.attributes = dict(attributes or {})
+		bound = (_BOUND.get() or {}).get(self.session_id)
+		if bound:
+			span.attributes = dict(bound)
+			span.attributes.update(attributes or {})
+		else:
+			span.attributes = dict(attributes or {})
 		if unknown:
 			span.attributes["unknown_label"] = True
 		span.input_tokens = span.output_tokens = None
@@ -495,6 +657,14 @@ class Session:
 		new_active = dict(active)
 		new_active[self.session_id] = span
 		span.token = _ACTIVE.set(new_active)
+		if self._hook_start:
+			# before the counter read and the clocks: outside the measured window
+			handle = SpanHandle(span)
+			for hook in self._hook_start:
+				try:
+					hook(handle)
+				except Exception:
+					self._hook_failed()
 		# Order: counter, then clocks at the start; clocks, then counter at the
 		# end. duration_s then covers the work only, never the read calls
 		# (~1.2 ms each through NVML on WSL2), while the counter window
@@ -562,11 +732,22 @@ class Session:
 				"attributes": span.attributes,
 				"energy": {"gpu": gpu},
 			}
+			if span.external_parent is not None:
+				record["external_parent"] = span.external_parent
 		except Exception:
+			record = None
 			self.n_spans_dropped += 1
-			return
-		if self._write(record):
+		if record is not None and self._write(record):
 			self.n_spans_written += 1
+		if self._hook_end:
+			# after the counter read, the clocks and the write; in reverse
+			# order, so context a hook attached at start is detached LIFO
+			handle = SpanHandle(span)
+			for hook in reversed(self._hook_end):
+				try:
+					hook(handle, record)
+				except Exception:
+					self._hook_failed()
 
 	def _write(self, record, force=False):
 		"""Append one record. Never raises; False when the record was not written."""

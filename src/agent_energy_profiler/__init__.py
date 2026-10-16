@@ -81,14 +81,20 @@ _REEXPORTS = {
 	"Status": ("schema", "Status"),
 	"Session": ("session", "Session"),
 	"Resolution": ("measurement", "Resolution"),
+	# Milestone 6
+	"analyze": ("report", "analyze"),
 }
+
+#: `agent_energy_profiler.otel` (Milestone 6) is deliberately not listed in
+#: _SUBMODULES: it needs the optional OpenTelemetry packages, so it is only
+#: ever loaded by an explicit `from agent_energy_profiler import otel`.
 
 __all__ = [
 	"aggregate", "attribution", "carbon", "events", "labels", "profiler",
 	"schema", "trajectory", "visualize", "span", "SCHEMA_VERSION", "Status",
 	"__version__",
 	"accounting", "attribution_v2", "measurement", "schema_v2", "session",
-	"Session", "Resolution", "cli", "report",
+	"Session", "Resolution", "cli", "report", "analyze",
 ]
 
 

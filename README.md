@@ -37,6 +37,8 @@ python -m venv .venv
 .venv/bin/pip install /path/to/agent-energy-profiler          # core: no dependencies
 .venv/bin/pip install '/path/to/agent-energy-profiler[gpu]'   # + NVIDIA GPU counters (nvidia-ml-py)
 .venv/bin/pip install '/path/to/agent-energy-profiler[plot]'  # + figures (matplotlib)
+.venv/bin/pip install '/path/to/agent-energy-profiler[otel]'  # + OpenTelemetry correlation/export
+.venv/bin/pip install '/path/to/agent-energy-profiler[otlp]'  # + OTLP/HTTP for `aep otel-export --endpoint`
 .venv/bin/pip install -e '.[test]'                            # development: full test suite
 ```
 
@@ -73,8 +75,52 @@ aep run --hardware-report hw.json --out-dir runs/demo -- python my_agent.py
 ```
 
 `aep run` starts the hardware sampler, runs the program, attributes its spans
-and prints a report. Three complete examples (CPU-only, GPU inference, an
-agent loop) are in [examples/](examples/).
+and prints a report. Four complete examples (CPU-only, GPU inference, an
+agent loop, an OpenTelemetry-traced service) are in [examples/](examples/).
+
+## Instrumenting an application
+
+| Need | Code |
+|---|---|
+| a session | `with Session("spans.jsonl", mode="auto") as session:` (or `Session.from_env(path, default_mode="auto")` to follow `aep run` when run under it) |
+| a block | `with session.span("tool:search", attributes={...}) as s:` |
+| async code | `async with session.span("llm:plan"):` — tasks created inside inherit the parent |
+| a function | `@session.trace("tool:search")` on a sync or async function; the label is required |
+| tokens, attributes, status | `s.set_tokens(input=812, output=64)`, `s.set_attribute(k, v)`, `s.set_status("timeout")` |
+| tag a request or task | `with session.bind(request_id=rid):` — every span opened inside gets the attribute, no extra span |
+| work handed to a thread | `session.span(..., parent=handle)`; new threads start without a parent |
+| attribute and report from Python | `rep = analyze(session)` then `print(report.render_text(rep))` |
+| join OpenTelemetry traces / export | `Session(..., hooks=[otel.Correlation()])`, then `otel.export_spans(run_dir, exporter)` |
+
+```python
+import os
+from agent_energy_profiler import Session, analyze, report
+from agent_energy_profiler.sampling import Sampler
+
+os.makedirs("run", exist_ok=True)
+with Session("run/spans.jsonl", mode="auto",
+             sampler=Sampler("run/power.csv", hz=10, counter_hz=0)) as session:
+    with session.bind(request_id="r1"):
+        with session.span("agent:request"):
+            ...
+print(report.render_text(analyze(session)))   # attributes run/, prints the report
+```
+
+Labels always come from your code. The profiler never derives one from a
+function name, a prompt or the call stack.
+
+## OpenTelemetry and frameworks
+
+- **OpenTelemetry** (`[otel]` extra): root spans join the application's
+  current trace. Optionally, application spans nest under profiler spans.
+  After attribution, `export_spans` / `aep otel-export` sends every span with
+  its energy as `aep.*` attributes to your exporter. Measured, estimated,
+  missing, shared and below-resolution values stay distinguishable. Global
+  OpenTelemetry configuration is never touched. Details and the attribute
+  list: [docs/OPENTELEMETRY.md](docs/OPENTELEMETRY.md).
+- **LangGraph**: decorate node functions with `session.trace(label)`. Tested
+  against LangGraph 1.2.15 for sync and async graphs with parallel branches.
+  Why not callbacks: [docs/LANGGRAPH.md](docs/LANGGRAPH.md).
 
 ## Measurement modes
 
@@ -89,11 +135,14 @@ host each read lowers what the counter reports
 | `hybrid` | estimated from averaged power | the run, plus a 1 Hz measured counter series checked against the estimate |
 | `auto` | `direct` only if `aep validate --counter-disturbance` found no effect on this host; otherwise `sampled` | |
 
-`aep run` defaults to `auto`; `Session` defaults to `direct` (unchanged).
-Every artifact records the mode, the sampler's read rates, the disturbance
-verdict and its source; reports warn when frequent counter reads met an
-unknown or detected disturbance. Details and migration:
-[docs/MEASUREMENT_MODES.md](docs/MEASUREMENT_MODES.md).
+`aep run` defaults to `auto`. `Session` still defaults to `direct` for
+compatibility, but records that the mode was defaulted, and reports warn
+(`DIRECT_MODE_BY_DEFAULT`) unless the host was shown to be undisturbed. Pass
+`mode=` explicitly. A staged plan for making `auto` the SDK default is in
+[docs/MEASUREMENT_MODES.md](docs/MEASUREMENT_MODES.md#migrating-towards-conservative-defaults-proposal-m6).
+Every artifact records the mode, who chose it, the sampler's read rates,
+the disturbance verdict and its source. Reports warn when frequent counter
+reads met an unknown or detected disturbance.
 
 ## CLI
 
@@ -104,6 +153,7 @@ unknown or detected disturbance. Details and migration:
 | `aep attribute FILE --power power.csv` | joins spans (v2) or events (v1) with the hardware timeline |
 | `aep report DIR_OR_FILE [--format text\|json\|csv]` | readable or structured summary of a v1 or v2 run |
 | `aep export DIR_OR_FILE --out-dir D` | `spans.csv` (one row per span), `operations.csv`, `report.json` |
+| `aep otel-export DIR_OR_FILE [--endpoint URL \| --out FILE]` | spans as OpenTelemetry spans with energy attributes: OTLP/HTTP, JSON lines, or the console (`[otel]` / `[otlp]` extras) |
 | `aep sample --out power.csv [--hz N] [--counter-hz N]` | the sampler on its own (default: counter on every row, as before; `--counter-hz 0`: first and last row only) |
 
 `python -m agent_energy_profiler …` is equivalent to `aep …`.
@@ -198,6 +248,10 @@ overhead is a large fraction of the work. Use `gpu=False` (or
 6. **No multiprocessing attribution.** One `Session` per process; nothing
    separates device energy between processes.
 7. **No idle subtraction.** Idle draw is part of every figure.
+8. **Exported traces are not validation.** OpenTelemetry attributes carry
+   the profiler's values and provenance unchanged. They say
+   `aep.energy.external_meter_validated = false`, and they reach a backend
+   only after the run is attributed and exported (no live energy).
 
 ## Test
 
