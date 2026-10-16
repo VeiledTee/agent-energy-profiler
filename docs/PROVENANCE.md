@@ -931,7 +931,7 @@ node names; sync handlers run on another thread in async graphs).
 `otel.export_spans`: 50 000 attributed spans in 1.99 s (~25 000/s), 92 MB
 peak RSS.
 
-**Tests added.** `tests/test_session_hooks.py` (24): hook order relative to
+**Tests added.** `tests/test_session_hooks.py` (23): hook order relative to
 counter reads and the write; identical energy and read counts with and
 without hooks; LIFO end hooks; failing and malformed hooks counted, never
 raised; external trace context (root only, explicit trace id wins,
