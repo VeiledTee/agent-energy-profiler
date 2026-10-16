@@ -70,7 +70,7 @@ class TestLifecycle(SessionCase):
 		self.assertEqual([r["record_type"] for r in recs],
 		                 ["session_start", "span", "session_end"])
 		head = recs[0]
-		self.assertEqual(head["profiler_version"], "0.2.0")
+		self.assertEqual(head["profiler_version"], "0.3.0")
 		self.assertEqual(head["config"]["energy_scope"], "device")
 		self.assertEqual(head["config"]["resolution"]["basis"], "configured")
 		self.assertEqual(head["attributes"], {"run_id": "r1"})

@@ -9,7 +9,7 @@ for GPUs, Linux RAPL for CPU package and DRAM) and reports how much energy
 the device used during each span, how long each step took, and how confident
 you can be in each number.
 
-> **Status: 0.2.0, research-grade.** Extracted from a PhD research codebase
+> **Status: 0.3.0, beta, research-grade.** Extracted from a PhD research codebase
 > ([docs/PROVENANCE.md](docs/PROVENANCE.md)). Measurements are validated
 > against golden research artifacts, but read
 > [Known limitations](#known-limitations) before relying on GPU figures:
@@ -42,7 +42,7 @@ python -m venv .venv
 .venv/bin/pip install -e '.[test]'                            # development: full test suite
 ```
 
-Python 3.9 or later.
+Python 3.9 or later (CI: 3.9–3.14, Linux). The core has no dependencies.
 
 **Supported hardware.** Anything works; what gets measured depends on the
 host. `aep validate` tells you exactly.
@@ -60,7 +60,7 @@ host. `aep validate` tells you exactly.
 ```python
 from agent_energy_profiler import Session
 
-with Session.from_env("spans.jsonl") as session:          # `aep run` sets the path
+with Session.from_env("spans.jsonl", default_mode="auto") as session:  # `aep run` sets path and mode
     with session.span("agent:question", attributes={"id": "q1"}):
         with session.span("retrieval:search"):
             docs = search(query)
@@ -135,11 +135,15 @@ host each read lowers what the counter reports
 | `hybrid` | estimated from averaged power | the run, plus a 1 Hz measured counter series checked against the estimate |
 | `auto` | `direct` only if `aep validate --counter-disturbance` found no effect on this host; otherwise `sampled` | |
 
-`aep run` defaults to `auto`. `Session` still defaults to `direct` for
-compatibility, but records that the mode was defaulted, and reports warn
-(`DIRECT_MODE_BY_DEFAULT`) unless the host was shown to be undisturbed. Pass
-`mode=` explicitly. A staged plan for making `auto` the SDK default is in
-[docs/MEASUREMENT_MODES.md](docs/MEASUREMENT_MODES.md#migrating-towards-conservative-defaults-proposal-m6).
+`aep run` defaults to `auto`. `Session` still defaults to `direct` in 0.3.0,
+but **becomes `auto` in 0.4.0**. Until then a `Session` created without
+`mode=` warns once per process (`SessionDefaultModeWarning`), records that
+the mode was defaulted, and its report warns (`DIRECT_MODE_BY_DEFAULT`)
+unless the host was shown to be undisturbed. Pass `mode="direct"` to keep
+per-span counter measurement, or `mode="auto"` to adopt the new default now;
+in `sampled` mode per-span GPU energy is an estimate, not a counter
+measurement. Details and the migration table:
+[docs/MEASUREMENT_MODES.md](docs/MEASUREMENT_MODES.md#sdk-default-mode-migration).
 Every artifact records the mode, who chose it, the sampler's read rates,
 the disturbance verdict and its source. Reports warn when frequent counter
 reads met an unknown or detected disturbance.
@@ -268,6 +272,13 @@ AEP_TEST_INSTALLED=1 python -m pytest tests
 
 Run the suite with `TMPDIR` outside any git working tree: one provenance test
 checks that a temporary directory is *not* a repository.
+
+## Project
+
+- Public API and compatibility policy: [docs/API.md](docs/API.md),
+  [CHANGELOG.md](CHANGELOG.md).
+- Contributing: [CONTRIBUTING.md](CONTRIBUTING.md). Security reports:
+  [SECURITY.md](SECURITY.md). Licence: MIT ([LICENSE](LICENSE)).
 
 ## Repository hygiene
 

@@ -38,6 +38,7 @@ from . import attribution_v2
 from . import measurement as m
 from . import schema_v2
 from . import trajectory
+from ._compat import sum  # 3.12 float summation on every Python (see _compat)
 
 REPORT_VERSION = 1
 BOUNDARY = ("gpu", "cpu_package", "dram")
@@ -574,7 +575,7 @@ def build(path, resolution=None):
 def analyze(spans, power=None, out_dir=None, resolution_report=None, allow_uncovered=False):
 	"""Attribute a recorded session and return its report.
 
-	    with Session("run/spans.jsonl", sampler=Sampler("run/power.csv", ...)) as s:
+	    with Session("run/spans.jsonl", mode="auto", sampler=Sampler("run/power.csv", ...)) as s:
 	        ...
 	    rep = analyze(s)                  # or analyze("run/spans.jsonl", power=...)
 	    print(report.render_text(rep))

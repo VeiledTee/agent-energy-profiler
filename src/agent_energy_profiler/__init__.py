@@ -51,7 +51,7 @@ Quick start:
 
 import importlib
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 #: Submodules reachable as attributes of the package. Resolved on first access
 #: rather than at import (PEP 562), for two reasons:

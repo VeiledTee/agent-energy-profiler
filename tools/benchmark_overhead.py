@@ -77,7 +77,7 @@ def main():
 	           ("v2-nvml", "auto")]
 	for name, gpu in configs:
 		path = os.path.join(work, f"{name}.jsonl")
-		with Session(path, gpu=gpu, overwrite=True) as s:
+		with Session(path, gpu=gpu, overwrite=True, mode="direct") as s:
 			header_gpu = s._reader is not None
 			if name == "v2-nvml" and not header_gpu:
 				rows.append((name, None))

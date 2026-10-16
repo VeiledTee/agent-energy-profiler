@@ -14,7 +14,7 @@ All four record spans with `Session.from_env(...)`, so they work both on
 their own (writing a spans file) and under `aep run`, which adds the hardware
 sampler, whole-program energy, attribution and a report. Each passes
 `default_mode=` explicitly: it applies only when the program runs on its own
-(see docs/MEASUREMENT_MODES.md, "Migrating towards conservative defaults").
+(see docs/MEASUREMENT_MODES.md, "SDK default mode migration").
 
 LangGraph: decorate node functions with `session.trace(label)`; see
 [docs/LANGGRAPH.md](../docs/LANGGRAPH.md).

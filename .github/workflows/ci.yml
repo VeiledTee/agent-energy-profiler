@@ -1,0 +1,68 @@
+# Hardware-independent checks. CI runners have no NVIDIA GPU and no readable
+# RAPL, so every test uses synthetic readers or skips; nothing here measures
+# energy. GPU and RAPL behaviour on real hardware is out of CI's reach
+# (docs/HARDWARE_VALIDATION_PROTOCOL.md).
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: tests (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install with the test extra
+        run: python -m pip install -e ".[test]"
+      - name: Run the suite
+        run: python -m pytest -q
+
+  package:
+    name: build and test the wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: |
+            3.9
+            3.13
+      - name: Build sdist and wheel
+        run: |
+          python3.13 -m pip install build twine
+          python3.13 -m build
+          python3.13 -m twine check --strict dist/*
+      - name: Minimal install (core has no dependencies), Python 3.9
+        run: tools/check_wheel.sh python3.9 dist/*.whl "" "$RUNNER_TEMP/w-min"
+      - name: "[test,gpu] install: nvidia-ml-py present, no driver"
+        run: tools/check_wheel.sh python3.13 dist/*.whl "test,gpu" "$RUNNER_TEMP/w-full"
+      - name: "[otlp] install"
+        run: tools/check_wheel.sh python3.13 dist/*.whl "otlp" "$RUNNER_TEMP/w-otlp"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  langgraph:
+    name: LangGraph compatibility
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e ".[test]" "langgraph==1.2.15"
+      - run: python -m pytest -q tests/test_langgraph.py tests/test_otel.py tests/test_otel_modes.py tests/test_session_hooks.py

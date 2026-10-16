@@ -3,7 +3,7 @@
     from agent_energy_profiler import Session
     from agent_energy_profiler.measurement import Resolution
 
-    with Session("spans.jsonl",
+    with Session("spans.jsonl", mode="auto",
                  resolution=Resolution.from_hardware_report("hw.json"),
                  attributes={"run_id": "run-1"}) as session:
         with session.span("agent:step") as step:
@@ -65,6 +65,7 @@ import secrets
 import sys
 import threading
 import time
+import warnings
 
 from . import __version__
 from . import labels as _labels
@@ -88,6 +89,24 @@ def _hex_id(value, length):
 	        and value.strip("0")):
 		return value
 	return None
+
+#: Whether the implicit-default warning was shown (once per process, 0.3.0).
+_default_mode_warned = False
+_default_mode_warn_lock = threading.Lock()
+
+
+def _warn_implicit_default_mode(stacklevel):
+	"""Emit SessionDefaultModeWarning once per process. `stacklevel` points
+	the warning at the caller of Session() or Session.from_env()."""
+	global _default_mode_warned
+	with _default_mode_warn_lock:
+		if _default_mode_warned:
+			return
+		# Flagged only after warn() returns: under -W error every implicit
+		# Session() raises, rather than only the first.
+		warnings.warn(m.SESSION_DEFAULT_WARNING, m.SessionDefaultModeWarning,
+		              stacklevel=stacklevel + 1)
+		_default_mode_warned = True
 
 #: Every open span in this process, for cross-session overlap DETECTION only.
 _open_lock = threading.Lock()
@@ -256,7 +275,9 @@ class Session:
 	            never read it per span, leaving GPU span energy to estimates;
 	            "auto" picks from `disturbance` (resolve_mode). Omitted: direct,
 	            the behaviour of every session before Milestone 5, recorded
-	            with mode_source "default" (docs/MEASUREMENT_MODES.md)
+	            with mode_source "default"; since 0.3.0 this also emits a
+	            SessionDefaultModeWarning once per process, because the
+	            default becomes "auto" in 0.4.0 (docs/MEASUREMENT_MODES.md)
 	disturbance measurement.CounterDisturbance: what is known about counter
 	            disturbance on this host. Recorded in the header; UNKNOWN if
 	            omitted, and never assumed to mean "not disturbed"
@@ -280,6 +301,7 @@ class Session:
 			self.requested_mode = m.SESSION_DEFAULT_MODE
 			self.mode, self.mode_reason = m.SESSION_DEFAULT_MODE, m.SESSION_DEFAULT_REASON
 			self.mode_source = m.MODE_SOURCE_DEFAULT
+			_warn_implicit_default_mode(2)
 		else:
 			self.requested_mode = mode
 			self.mode, self.mode_reason = m.resolve_mode(mode, self.disturbance)
@@ -350,6 +372,10 @@ class Session:
 			kwargs.setdefault("timeline", meas.get("timeline"))
 		elif kwargs.get("mode") is None and default_mode is not None:
 			kwargs["mode"] = default_mode
+		if kwargs.get("mode") is None:
+			# warned here so it names from_env's caller; __init__ then finds it
+			# already shown (or, under -W error, is never reached)
+			_warn_implicit_default_mode(2)
 		if "gpu" not in kwargs and os.environ.get(cls.ENV_GPU):
 			kwargs["gpu"] = False if os.environ[cls.ENV_GPU] == "off" else "auto"
 		merged = {}

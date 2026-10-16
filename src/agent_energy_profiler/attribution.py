@@ -57,6 +57,7 @@ import sys
 from collections import defaultdict
 
 from . import trajectory
+from ._compat import sum  # 3.12 float summation on every Python (see _compat)
 
 #: Format tag of the sampler's power-metadata sidecar (<power.csv>.meta.json).
 POWER_META_FORMAT = "agent_energy_profiler.power_meta"

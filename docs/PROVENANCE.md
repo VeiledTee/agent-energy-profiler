@@ -864,7 +864,7 @@ predicts but not resolved from zero.
 
 Design and attribute mapping: [OPENTELEMETRY.md](OPENTELEMETRY.md). LangGraph
 evaluation: [LANGGRAPH.md](LANGGRAPH.md). Default-mode migration:
-[MEASUREMENT_MODES.md](MEASUREMENT_MODES.md#migrating-towards-conservative-defaults-proposal-m6).
+[MEASUREMENT_MODES.md](MEASUREMENT_MODES.md#sdk-default-mode-migration).
 New fields: [SCHEMA_V2.md](SCHEMA_V2.md) section 7.
 
 **Changes.**
@@ -954,6 +954,88 @@ been checked on physical hardware. The counter disturbance and the lag of
 averaged power stay as documented in M4/M5. OpenTelemetry attributes change
 none of this.
 
+## Milestone 7: SDK defaults and v0.3.0 release preparation
+
+Migration: [MEASUREMENT_MODES.md](MEASUREMENT_MODES.md#sdk-default-mode-migration).
+Public API: [API.md](API.md). Release notes: [CHANGELOG.md](../CHANGELOG.md).
+
+**Changes.**
+
+- Version 0.3.0.
+- `Session()` without `mode=` still runs `direct`. It now emits
+  `measurement.SessionDefaultModeWarning` (a `FutureWarning`) once per
+  process, pointing at the caller's line. The warning says the default
+  becomes `auto` in 0.4.0, that `auto` may select `sampled` (per-span GPU
+  energy estimated, not counter-measured), and how to keep or adopt either.
+  - Explicit modes, `Session.from_env(default_mode=...)` and sessions
+    configured by `aep run` never warn.
+  - The stack level is fixed, not found by frame inspection, which the
+    package-boundary rule forbids.
+- **Float summation identical on every supported Python.**
+  - Python 3.12 made `sum()` of floats compensated (Neumaier). On 3.9–3.11
+    the v1 and v2 golden outputs differed in the last digit of some energies
+    (4 failures on 3.9, 7 on 3.10 and 3.11). Python 3.14 changed `sum()`
+    again for ints mixed with floats; the goldens were not affected.
+  - `agent_energy_profiler._compat.sum` is the built-in on 3.12 and 3.13 and
+    a pure-Python replica of 3.12's algorithm elsewhere. The modules that sum
+    floats import it. On 3.12, where the reference artifacts were produced,
+    nothing changes: it is the same function.
+  - The replica matched the built-in on 500,000 random inputs each on 3.12.3
+    and 3.13.16, including ints, bools, ±0.0, infinities and ints past a C
+    long. `tests/test_compat.py` repeats a smaller check.
+- Release files:
+  - `CHANGELOG.md`, `CONTRIBUTING.md`, `SECURITY.md`, `docs/API.md` (the
+    public surface the deprecation policy covers);
+  - `MANIFEST.in`: the sdist ships tests with goldens, docs, examples and
+    tools, but not `results/`;
+  - `pyproject.toml`: SPDX licence, author, classifiers, keywords,
+    `setuptools>=77`.
+- CI (`.github/workflows/ci.yml`; it has not run on a hosted runner, since
+  there is no remote):
+  - the suite on Python 3.9–3.14;
+  - build, `twine check --strict`, and `tools/check_wheel.sh` for a minimal
+    3.9 install, `[test,gpu]` (NVML library absent) and `[otlp]`;
+  - LangGraph 1.2.15 compatibility.
+- New tests:
+  - `tests/test_default_mode_warning.py` (8);
+  - `tests/test_otel_modes.py` (9): OpenTelemetry across every measurement
+    mode, concurrency, and missing hardware;
+  - `tests/test_compat.py` (3);
+  - `tests/test_release.py` (4): one version everywhere, extras documented,
+    classifiers equal the CI matrix.
+- Docstring and benchmark examples pass `mode=` explicitly.
+  `tools/build_v2_fixture.py` is left as it was: it documents how the v2
+  fixture was made.
+
+**Behaviour changes.** A new warning for implicitly defaulted sessions.
+On Python 3.9–3.11 and 3.14, sums of floats now follow 3.12's arithmetic,
+which changes the last bits of some values relative to 0.2.0 on those
+versions only. This brings them into agreement with the reference
+artifacts. No measured value changed on 3.12. No field changed meaning. The
+default mode did not change.
+
+**Validation on this machine (RTX 4090, WSL2, driver 610.88).** Python 3.9,
+3.10, 3.11, 3.13 and 3.14 are uv-managed interpreters under `build/`.
+
+| Check | Result |
+|---|---|
+| Full suite, `.venv` (3.12) | 539 passed, 10 skipped |
+| Full suite with `[test]`, Python 3.9 / 3.10 / 3.11 / 3.12 / 3.13 / 3.14 | 532 / 534 / 534 / 535 / 535 / 534 passed, no failures (before `_compat.sum`: 4 / 7 / 7 failures on 3.9 / 3.10 / 3.11, all golden byte comparisons) |
+| v1 and v2 golden fixtures | byte-identical on every version above; fixture files unchanged |
+| Frozen research runs (3 runs) | identical on 3.12 (26 s) and on 3.9 with the pure-Python sum (27 s) |
+| New tests repeated 20 times | 20 of 20 runs passed |
+| LangGraph 1.2.15 venv: LangGraph, OpenTelemetry, hooks and warning tests | 60 passed |
+| Build | sdist and wheel; `twine check --strict` passed; wheel metadata has `License-Expression: MIT`; sdist has 175 files, with no `results/` and no `__pycache__` |
+| Clean wheel, `tools/check_wheel.sh`: minimal 3.9 / minimal 3.14 / `[test,gpu]` 3.13 / `[otlp]` 3.13 / `[otel]` 3.9 at OpenTelemetry 1.20.0 | 447 / 449 / 526 / 477 / 474 passed; no failures |
+| `pip-audit` of the `[test,gpu]` and `[otlp]` environments | no known vulnerabilities (2026-10-16) |
+| First run, minimal wheel, 3.9 | `aep --help` and `aep validate` (nothing measurable without `nvidia-ml-py`) work. README quick start run on its own: one `SessionDefaultModeWarning` naming the user's line. Under `aep run` (`auto` → `sampled`): no warning, and a report with every domain `n/a` and a reason |
+| Thesis repository | clean, still at `08bbc96` |
+
+**Not established.** Accuracy of any value: no external meter. RAPL has not
+been checked on physical hardware. The CI workflow has not run on a hosted
+runner. Windows and macOS are untested (declared unsupported for
+measurement).
+
 ## Remaining references to the research repository
 
 The research repository is not a dependency: no code imports it, no test
@@ -986,3 +1068,4 @@ schema v1 and generic in role. Renaming them is a schema-v2 decision.
 | 0.2.0 + M4 (version not bumped) | NVML counter validation: diagnostics in `tools/nvml_diagnostics/`, raw results in `results/nvml_m4/`, `docs/NVML_COUNTER_VALIDATION.md`, opt-in `aep validate --counter-disturbance`, a note on the resolution probe's step. No measurement behaviour changed. | identical: v1 fixtures, frozen runs, and the v2 fixture |
 | 0.2.0 + M5 (version not bumped) | Measurement modes (`direct`/`sampled`/`hybrid`/`auto`), sampler counter policies, measurement provenance (model version 2), run counter and interval diagnostics, disturbance-aware report warnings; `aep run` defaults to `auto`. Existing fields keep their meaning. | identical: v1 fixtures, frozen runs, and the v2 fixture |
 | 0.2.0 + M6 (version not bumped) | Session hooks, `bind`, external trace parent; optional `otel` module and `aep otel-export`; `analyze()`; `mode_source` provenance and the `DIRECT_MODE_BY_DEFAULT` warning (Session's default mode unchanged); LangGraph guidance. No measured value or existing field meaning changed. | identical: v1 fixtures, frozen runs, and the v2 fixture |
+| 0.3.0 (M7) | `SessionDefaultModeWarning` for `Session()` without `mode=` (default still `direct`; `auto` planned for 0.4.0); 3.12 float summation on every supported Python (`_compat.sum`), which makes 3.9–3.11 and 3.14 reproduce the reference artifacts; release files, CI, wheel checks. No measured value on 3.12, no field meaning and no default changed. | identical: v1 fixtures and the v2 fixture on Python 3.9–3.14; frozen runs on 3.12 and 3.9 |

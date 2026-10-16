@@ -64,6 +64,8 @@ overlap-free, is plain summation; that condition is checked, not assumed.
 import json
 from collections import defaultdict
 
+from ._compat import sum  # 3.12 float summation on every Python (see _compat)
+
 #: Energy fields carried per trajectory, mirroring the event boundary.
 ENERGY_FIELDS = ("gpu_energy_j", "cpu_package_energy_j", "dram_energy_j",
                  "measured_energy_j")

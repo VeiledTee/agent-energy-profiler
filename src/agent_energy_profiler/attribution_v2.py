@@ -40,6 +40,7 @@ from . import accounting
 from . import attribution as v1
 from . import measurement as m
 from . import schema_v2
+from ._compat import sum  # 3.12 float summation on every Python (see _compat)
 
 RAPL_SOURCE = "rapl"
 

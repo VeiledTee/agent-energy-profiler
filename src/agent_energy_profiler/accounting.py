@@ -25,6 +25,7 @@ import sys
 from collections import Counter, defaultdict
 
 from . import measurement as m
+from ._compat import sum  # 3.12 float summation on every Python (see _compat)
 
 _EPS = sys.float_info.epsilon
 

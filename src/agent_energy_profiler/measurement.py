@@ -14,6 +14,8 @@ Three things are kept apart here, and must stay apart downstream:
 import json
 import time
 
+from ._compat import sum  # 3.12 float summation on every Python (see _compat)
+
 MEASURED = "measured"
 UNAVAILABLE = "unavailable"
 INVALID = "invalid"
@@ -160,11 +162,37 @@ MODE_SOURCE_DEFAULT = "default"
 MODE_SOURCE_AEP_RUN = "aep_run"
 
 #: Session's default mode, kept for compatibility (docs/MEASUREMENT_MODES.md
-#: "Migrating towards conservative defaults").
+#: "SDK default mode migration").
 SESSION_DEFAULT_MODE = MODE_DIRECT
 SESSION_DEFAULT_REASON = ("default: Session's default mode (direct, per-span counter reads), "
                           "kept for compatibility; pass mode= to choose "
                           "(docs/MEASUREMENT_MODES.md)")
+
+#: The default Session is planned to take, and in which release (0.3.0 only
+#: announces it; nothing measured changes until then).
+SESSION_FUTURE_DEFAULT_MODE = MODE_AUTO
+SESSION_DEFAULT_CHANGES_IN = "0.4.0"
+
+
+class SessionDefaultModeWarning(FutureWarning):
+	"""`Session()` was created without `mode=` and fell back to `direct`.
+
+	A FutureWarning subclass, so it is shown by default and can be filtered
+	on its own (`warnings.filterwarnings("ignore", category=...)`). Passing
+	`mode=` explicitly is the intended way to silence it.
+	"""
+
+
+SESSION_DEFAULT_WARNING = (
+	f"Session() was created without mode=, so it uses '{SESSION_DEFAULT_MODE}' "
+	f"(the GPU energy counter is read at every span's boundaries). In "
+	f"agent-energy-profiler {SESSION_DEFAULT_CHANGES_IN} the default becomes "
+	f"'{SESSION_FUTURE_DEFAULT_MODE}', as in `aep run`: it selects 'direct' only when a "
+	f"hardware report shows counter reads are harmless on this host, and 'sampled' "
+	f"otherwise. In 'sampled' mode per-span GPU energy is an estimate from averaged "
+	f"power, not a counter measurement. Pass mode='direct' to keep the current "
+	f"behaviour, or mode='auto' to adopt the new default now "
+	f"(docs/MEASUREMENT_MODES.md). This warning is shown once per process.")
 
 
 def measurement_config(mode, requested, reason, disturbance, timeline=None, source=None):

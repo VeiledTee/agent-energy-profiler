@@ -63,7 +63,7 @@ report.
 
 | Entry point | Default | Changed in M5? |
 |---|---|---|
-| `Session(...)` (SDK) | `direct` | no: the behaviour of every earlier session. Since M6 the header says the mode was defaulted (`mode_source: "default"`) |
+| `Session(...)` (SDK) | `direct`; **`auto` from 0.4.0** | no: the behaviour of every earlier session. Since M6 the header says the mode was defaulted (`mode_source: "default"`); since 0.3.0 it also warns once per process ([migration](#sdk-default-mode-migration)) |
 | `Session.from_env(...)` | under `aep run`: `aep run`'s mode (`mode_source: "aep_run"`); on its own: `default_mode=` if given (M6), else as `Session` | — |
 | `aep run` | `--mode auto` (so `sampled` unless a hardware report says `NOT_DETECTED`); sampler power 10 Hz, counter at boundaries | **yes**: M3 read the counter per span and on every sampler row |
 | `aep sample` / `sampling.Sampler` | counter on every row | no; new `--counter-hz` / `counter_hz=` |
@@ -123,27 +123,72 @@ same `timeline` block. Field definitions: [SCHEMA_V2.md](SCHEMA_V2.md).
   `MEASUREMENT_NOT_RECORDED` and, because their counter-read rate is not
   known to be harmless, `COUNTER_DISTURBANCE_UNKNOWN`.
 
-## Migrating towards conservative defaults (proposal, M6)
+## SDK default mode migration
 
 The two entry points disagree: `aep run` is conservative (`auto`, so
-`sampled` without evidence), while `Session` still reads the counter per
-span by default. Changing `Session`'s default silently would change what
-existing code measures (per-span GPU values would turn from measured to
-estimated), so M6 does **not** change it. It makes the default visible and
-gives a path:
+`sampled` without evidence), while `Session` reads the counter per span by
+default. Changing `Session`'s default silently would change what existing
+code measures (per-span GPU values would turn from measured to estimated), so
+the change is staged across releases:
 
-| Stage | What changes | Status |
+| Stage | Release | What changes | Status |
+|---|---|---|---|
+| 1. Visible | M6 (0.2.0 development) | Headers record `mode_source`. A defaulted session's `mode_reason` says so. Reports warn `DIRECT_MODE_BY_DEFAULT` when `direct` came from the default on a host not shown to be undisturbed. `Session.from_env(default_mode=...)`. Examples pass a mode explicitly. | **done** |
+| 2. Announced | **0.3.0** | `Session()` without `mode=` emits `SessionDefaultModeWarning` (a `FutureWarning`), once per process. Nothing measured changes. | **done** |
+| 3. Switched | 0.4.0 (planned) | `Session()` defaults to `auto`: `direct` only with a `NOT_DETECTED` disturbance verdict, otherwise `sampled`. `mode_source` stays `default`, so artifacts say which default applied. `mode="direct"` keeps today's behaviour. | planned |
+
+### When the 0.3.0 warning appears
+
+| Code | Warns? | Mode |
 |---|---|---|
-| 1. Visible (M6) | Headers record `mode_source`. A defaulted session's `mode_reason` says so. Reports warn `DIRECT_MODE_BY_DEFAULT` when `direct` came from the default on a host not shown to be undisturbed. `Session.from_env(default_mode=...)` lets programs be conservative on their own and still follow `aep run`. Examples pass a mode explicitly. | **done** |
-| 2. Announced (next minor release, 0.3) | `Session()` without `mode=` emits a `FutureWarning` naming the coming default and how to keep `direct` (`mode="direct"`). Nothing measured changes. | proposed |
-| 3. Switched (the release after, 0.4) | `Session()` defaults to `auto`: `direct` only with a `NOT_DETECTED` disturbance verdict, otherwise `sampled`. `mode_source` stays `default`, so artifacts say which default applied. `mode="direct"` keeps today's behaviour. | proposed |
+| `Session(path)` | yes, once per process | `direct` (`mode_source: "default"`) |
+| `Session(path, mode="direct")` (or `"sampled"`, `"hybrid"`, `"auto"`) | no | as requested (`"caller"`) |
+| `Session.from_env(path)`, run on its own | yes, once per process | `direct` (`"default"`) |
+| `Session.from_env(path, default_mode=...)`, run on its own | no | `default_mode` (`"caller"`) |
+| `Session.from_env(...)` under `aep run` | no | `aep run`'s choice (`"aep_run"`) |
 
-The user decides when stages 2 and 3 happen. Until stage 3, code that wants
-today's behaviour forever should say `mode="direct"`, and code that wants the
-conservative behaviour now should say `mode="auto"` (with
-`disturbance=CounterDisturbance.from_hardware_report(...)` where a report
-exists). Tests pin every explicitly selected mode, its recorded
-`mode_source`, and the warning (`tests/test_session_hooks.py`,
+The warning names the caller's line, says what changes in 0.4.0 and how to
+keep or adopt either behaviour. It is shown once per process however many
+sessions are created (threads included), so long-running services and test
+suites are not flooded. Under `python -W error::FutureWarning` every implicit
+`Session()` raises before any file is opened, which is useful in CI to find
+them all. To silence it without choosing a mode (not recommended):
+`warnings.filterwarnings("ignore", category=measurement.SessionDefaultModeWarning)`.
+
+### What 0.4.0 will change for code that passes no mode
+
+On a host with no disturbance test result (the usual case), `auto` resolves
+to `sampled`:
+
+- **Per-span GPU energy becomes an estimate.** `energy.gpu` is `unavailable`
+  with reason `not_read_by_mode`; the integrated-power value is under
+  `estimates.gpu` (`status: "estimated"`), and span totals that need GPU are
+  `null`. Exclusive GPU energy of parents is not available.
+- **Measured GPU energy covers the whole run**, from a sampler (`aep run`
+  or `Session(sampler=...)`) reading the counter at its first and last row.
+  A `Session` without a sampler has no hardware timeline: spans then carry
+  no GPU estimate either, until attributed against one.
+- **No more per-span counter reads**, so no per-span NVML overhead (~2.5 ms
+  per span on the development host) and no counter disturbance from them.
+- CPU package and DRAM (RAPL) are unaffected: they always come from the
+  sampler's timeline.
+- With `disturbance=CounterDisturbance.from_hardware_report("hw.json")` and
+  a `NOT_DETECTED` verdict, `auto` chooses `direct` and nothing changes.
+
+### What to do now
+
+| You want | Write |
+|---|---|
+| exactly today's behaviour, also after 0.4.0 | `Session(path, mode="direct")` |
+| the 0.4.0 behaviour now | `Session(path, mode="auto", disturbance=CounterDisturbance.from_hardware_report("hw.json"), sampler=Sampler(..., counter_hz=0))` |
+| `aep run`'s choice under `aep run`, your own otherwise | `Session.from_env(path, default_mode="direct")` (or `"auto"`) |
+| code that must not depend on the default | pass `mode=` everywhere; run tests with `-W error::FutureWarning` to find the places that do not |
+
+Artifacts written before 0.4.0 keep their meaning: they record the mode that
+actually ran (`mode`, `requested_mode`, `mode_source`). Readers and reports
+need no change. Tests pin every explicitly selected mode, its recorded
+`mode_source`, the 0.3.0 warning (`tests/test_default_mode_warning.py`), and
+the unchanged default (`tests/test_session_hooks.py`,
 `tests/test_measurement_modes.py`).
 
 ## Measured effect of the modes (development host)

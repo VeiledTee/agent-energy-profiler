@@ -47,6 +47,7 @@ import json
 from collections import defaultdict
 
 from . import trajectory
+from ._compat import sum  # 3.12 float summation on every Python (see _compat)
 
 #: Additive domains of the measurement boundary, plus the total. Mirrors
 #: trajectory.ENERGY_FIELDS deliberately: aggregation must not invent a

@@ -1,0 +1,12 @@
+# Source distribution: the package, the tests with their golden fixtures,
+# and what the README links to. Raw diagnostic data (results/) stays in the
+# repository only.
+include CHANGELOG.md CONTRIBUTING.md SECURITY.md
+graft tests
+include constraints/baseline.txt
+include scripts/git-hooks/commit-msg
+include .github/workflows/ci.yml
+graft docs
+graft examples
+graft tools
+global-exclude __pycache__ *.py[cod]

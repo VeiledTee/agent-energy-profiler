@@ -53,6 +53,7 @@ import sys
 from collections import Counter, defaultdict
 
 from . import aggregate, trajectory
+from ._compat import sum  # 3.12 float summation on every Python (see _compat)
 
 EVENTS_FILE = "events_attributed.jsonl"
 TRAJECTORY_FILE = "trajectory_summary.json"

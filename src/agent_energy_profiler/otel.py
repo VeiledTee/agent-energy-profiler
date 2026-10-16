@@ -10,7 +10,7 @@ spans to an exporter the caller supplies.
        from agent_energy_profiler import Session
        from agent_energy_profiler.otel import Correlation
 
-       with Session("spans.jsonl", hooks=[Correlation()]) as session:
+       with Session("spans.jsonl", mode="auto", hooks=[Correlation()]) as session:
            ...
 
    A root span opened while an OpenTelemetry span is current joins that

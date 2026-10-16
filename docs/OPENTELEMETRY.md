@@ -242,6 +242,40 @@ next to the two NVML reads of `direct` mode.
 (~25 000 spans/s), peak RSS 92 MB for the whole benchmark process. Export
 streams the file in batches and does not hold all spans.
 
+## Behaviour across measurement modes (0.3.0)
+
+`tests/test_otel_modes.py` records one workload in every mode (`direct`,
+`sampled`, `hybrid`, `auto` without evidence → `sampled`, `auto` with
+`NOT_DETECTED` → `direct`). The workload has nested sync spans, two
+concurrent asyncio tasks, an explicitly parented thread and application
+spans in between. Each run is attributed against a synthetic power timeline
+and exported. In every mode:
+
+- application and profiler spans form one trace with one root, and every
+  parent is present;
+- `aep.measurement.mode` / `requested_mode` / `mode_source` match the
+  session;
+- only `direct` carries `aep.energy.gpu.energy_j`, with the counter read
+  twice per span. In `sampled` and `hybrid` the GPU counter is not read per
+  span: the span says `unavailable` / `not_read_by_mode`, the estimate sits
+  under `aep.estimate.gpu.*`, and no total that needs the GPU is emitted;
+- overlapping siblings are `shared`, and a sequential child is `sole`;
+- the GPU attributes and the number of counter reads are identical with and
+  without `Correlation(propagate=True)`.
+
+Missing hardware stays missing in the export:
+
+| Case | Exported GPU fields |
+|---|---|
+| no GPU (`gpu=False`) | `unavailable`, `disabled` |
+| `nvidia-ml-py` installed, no driver | `unavailable`, `no_counter` |
+| counter fails mid-run | `measured` spans before the failure, a reason and no number after |
+| no power timeline | nothing measured or estimated for any domain, and no total |
+| not attributed at all | the recorded fields only, with no accounting |
+
+`bind()` attributes follow asyncio tasks but not new threads, as documented
+for the profiler's own spans.
+
 ## Limitations
 
 - **Per-span energy is device energy.** Exporting it to a trace backend does
