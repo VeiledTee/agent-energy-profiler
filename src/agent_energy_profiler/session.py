@@ -65,7 +65,6 @@ import secrets
 import sys
 import threading
 import time
-import warnings
 
 from . import __version__
 from . import labels as _labels
@@ -89,24 +88,6 @@ def _hex_id(value, length):
 	        and value.strip("0")):
 		return value
 	return None
-
-#: Whether the implicit-default warning was shown (once per process, 0.3.0).
-_default_mode_warned = False
-_default_mode_warn_lock = threading.Lock()
-
-
-def _warn_implicit_default_mode(stacklevel):
-	"""Emit SessionDefaultModeWarning once per process. `stacklevel` points
-	the warning at the caller of Session() or Session.from_env()."""
-	global _default_mode_warned
-	with _default_mode_warn_lock:
-		if _default_mode_warned:
-			return
-		# Flagged only after warn() returns: under -W error every implicit
-		# Session() raises, rather than only the first.
-		warnings.warn(m.SESSION_DEFAULT_WARNING, m.SessionDefaultModeWarning,
-		              stacklevel=stacklevel + 1)
-		_default_mode_warned = True
 
 #: Every open span in this process, for cross-session overlap DETECTION only.
 _open_lock = threading.Lock()
@@ -273,11 +254,12 @@ class Session:
 	mode        measurement mode (measurement.MODES): "direct" reads the GPU
 	            counter at each span's boundaries; "sampled" and "hybrid"
 	            never read it per span, leaving GPU span energy to estimates;
-	            "auto" picks from `disturbance` (resolve_mode). Omitted: direct,
-	            the behaviour of every session before Milestone 5, recorded
-	            with mode_source "default"; since 0.3.0 this also emits a
-	            SessionDefaultModeWarning once per process, because the
-	            default becomes "auto" in 0.4.0 (docs/MEASUREMENT_MODES.md)
+	            "auto" picks from `disturbance` (resolve_mode). Omitted: "auto"
+	            since 0.4.0 (before: "direct"), recorded with mode_source
+	            "default" (docs/MEASUREMENT_MODES.md). `auto` selects direct
+	            only for a NOT_DETECTED verdict whose host, driver and GPU
+	            models match this one (checked when the session starts), and
+	            sampled otherwise; it never runs the disturbance test
 	disturbance measurement.CounterDisturbance: what is known about counter
 	            disturbance on this host. Recorded in the header; UNKNOWN if
 	            omitted, and never assumed to mean "not disturbed"
@@ -299,13 +281,11 @@ class Session:
 		self.disturbance = disturbance or m.CounterDisturbance.unknown()
 		if mode is None:
 			self.requested_mode = m.SESSION_DEFAULT_MODE
-			self.mode, self.mode_reason = m.SESSION_DEFAULT_MODE, m.SESSION_DEFAULT_REASON
 			self.mode_source = m.MODE_SOURCE_DEFAULT
-			_warn_implicit_default_mode(2)
 		else:
 			self.requested_mode = mode
-			self.mode, self.mode_reason = m.resolve_mode(mode, self.disturbance)
 			self.mode_source = m.MODE_SOURCE_CALLER
+		self._resolve_mode(None)
 		self.hooks = tuple(hooks or ())
 		self._hook_context = [h.trace_context for h in self.hooks
 		                      if callable(getattr(h, "trace_context", None))]
@@ -352,7 +332,7 @@ class Session:
 		`default_mode` (Milestone 6) is the mode to use when neither `mode=`
 		nor `aep run` gives one, i.e. when the program runs on its own; it is
 		recorded as the caller's choice. Without it, Session's own default
-		applies.
+		(auto since 0.4.0) applies.
 		"""
 		path = os.environ.get(cls.ENV_SPANS_FILE) or default_path
 		if not path:
@@ -372,10 +352,6 @@ class Session:
 			kwargs.setdefault("timeline", meas.get("timeline"))
 		elif kwargs.get("mode") is None and default_mode is not None:
 			kwargs["mode"] = default_mode
-		if kwargs.get("mode") is None:
-			# warned here so it names from_env's caller; __init__ then finds it
-			# already shown (or, under -W error, is never reached)
-			_warn_implicit_default_mode(2)
 		if "gpu" not in kwargs and os.environ.get(cls.ENV_GPU):
 			kwargs["gpu"] = False if os.environ[cls.ENV_GPU] == "off" else "auto"
 		merged = {}
@@ -417,6 +393,11 @@ class Session:
 		self._started = True
 		try:
 			self._start_gpu()
+			if (self.requested_mode == m.MODE_AUTO and self.mode == m.MODE_DIRECT
+			        and self.mode_source != m.MODE_SOURCE_AEP_RUN):
+				# auto's direct choice holds only for the configuration the
+				# disturbance test ran on; `aep run` checked it in the parent
+				self._resolve_mode(m.current_configuration(self._reader))
 			if self.sampler is not None:
 				self.sampler.start()
 			self._write(self._session_start_record())
@@ -546,6 +527,12 @@ class Session:
 			except Exception:
 				pass
 		self._gpu_reader_name = getattr(reader, "name", "custom")
+
+	def _resolve_mode(self, current):
+		self.mode, self.mode_reason = m.resolve_mode(self.requested_mode, self.disturbance,
+		                                             current)
+		if self.mode_source == m.MODE_SOURCE_DEFAULT:
+			self.mode_reason = f"{m.SESSION_DEFAULT_REASON}; {self.mode_reason}"
 
 	@property
 	def span_counter_reads(self):

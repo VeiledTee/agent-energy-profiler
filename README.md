@@ -9,7 +9,7 @@ for GPUs, Linux RAPL for CPU package and DRAM) and reports how much energy
 the device used during each span, how long each step took, and how confident
 you can be in each number.
 
-> **Status: 0.3.0, beta, research-grade.** Extracted from a PhD research codebase
+> **Status: 0.4.0, beta, research-grade.** Extracted from a PhD research codebase
 > ([docs/PROVENANCE.md](docs/PROVENANCE.md)). Measurements are validated
 > against golden research artifacts, but read
 > [Known limitations](#known-limitations) before relying on GPU figures:
@@ -133,16 +133,16 @@ host each read lowers what the counter reports
 | `direct` | measured: counter read at each span's boundaries | each span, and the run |
 | `sampled` | estimated from averaged power | the run (counter at the sampler's first and last row) |
 | `hybrid` | estimated from averaged power | the run, plus a 1 Hz measured counter series checked against the estimate |
-| `auto` | `direct` only if `aep validate --counter-disturbance` found no effect on this host; otherwise `sampled` | |
+| `auto` | `direct` only if `aep validate --counter-disturbance` found no effect on this host, driver and GPU; otherwise `sampled` | |
 
-`aep run` defaults to `auto`. `Session` still defaults to `direct` in 0.3.0,
-but **becomes `auto` in 0.4.0**. Until then a `Session` created without
-`mode=` warns once per process (`SessionDefaultModeWarning`), records that
-the mode was defaulted, and its report warns (`DIRECT_MODE_BY_DEFAULT`)
-unless the host was shown to be undisturbed. Pass `mode="direct"` to keep
-per-span counter measurement, or `mode="auto"` to adopt the new default now;
-in `sampled` mode per-span GPU energy is an estimate, not a counter
-measurement. Details and the migration table:
+**Since 0.4.0 both `aep run` and `Session` default to `auto`.** Without a
+hardware report showing that counter reads are harmless on this host,
+driver and GPU, that means `sampled`: per-span GPU energy is an **estimate**
+from averaged power, and the measured GPU figure covers the whole run.
+`Session` defaulted to `direct` (per-span counter measurement) before 0.4.0.
+Pass `mode="direct"` to keep that behaviour, and check each artifact's mode
+before comparing per-span GPU numbers across versions. Details, the
+before/after table and how to compare experiments:
 [docs/MEASUREMENT_MODES.md](docs/MEASUREMENT_MODES.md#sdk-default-mode-migration).
 Every artifact records the mode, who chose it, the sampler's read rates,
 the disturbance verdict and its source. Reports warn when frequent counter

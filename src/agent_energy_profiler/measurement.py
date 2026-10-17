@@ -87,16 +87,24 @@ class CounterDisturbance:
 	verdict: DISTURBED, NOT_DETECTED, INCONCLUSIVE (from
 	`aep validate --counter-disturbance`), or UNKNOWN when no test result is
 	available. UNKNOWN never means "not disturbed".
+
+	`hostname`, `driver_version` and `gpu_models` describe the configuration
+	the test ran on (0.4.0: taken from the hardware report). `auto` applies a
+	NOT_DETECTED verdict only where they match the running configuration
+	(see configuration_mismatch).
 	"""
 
 	def __init__(self, verdict=UNKNOWN_VERDICT, source=None, retained_median=None,
-	             read_hz=None, measured_at_unix_s=None, driver_version=None):
+	             read_hz=None, measured_at_unix_s=None, driver_version=None,
+	             hostname=None, gpu_models=None):
 		self.verdict = verdict
 		self.source = source
 		self.retained_median = retained_median
 		self.read_hz = read_hz
 		self.measured_at_unix_s = measured_at_unix_s
 		self.driver_version = driver_version
+		self.hostname = hostname
+		self.gpu_models = list(gpu_models) if gpu_models is not None else None
 
 	@classmethod
 	def unknown(cls):
@@ -112,31 +120,81 @@ class CounterDisturbance:
 		d = (report or {}).get("gpu_counter_disturbance") or {}
 		if d.get("status") != "SUPPORTED" or not d.get("verdict"):
 			return cls(source=(source or "hardware report") + " (no disturbance test in it)")
+		gpu = (report or {}).get("gpu") or {}
+		devices = gpu.get("devices")
 		return cls(d["verdict"], source or "hardware report", d.get("retained_median"),
 		           d.get("read_hz"), (report or {}).get("generated_at"),
-		           ((report or {}).get("gpu") or {}).get("driver_version"))
+		           gpu.get("driver_version"),
+		           ((report or {}).get("host") or {}).get("hostname"),
+		           [dev.get("name") for dev in devices] if devices else None)
 
 	def to_dict(self):
-		return {"verdict": self.verdict, "source": self.source,
-		        "retained_median": self.retained_median, "read_hz": self.read_hz,
-		        "measured_at_unix_s": self.measured_at_unix_s,
-		        "driver_version": self.driver_version}
+		out = {"verdict": self.verdict, "source": self.source,
+		       "retained_median": self.retained_median, "read_hz": self.read_hz,
+		       "measured_at_unix_s": self.measured_at_unix_s,
+		       "driver_version": self.driver_version}
+		# 0.4.0: only when known, so headers of earlier sessions keep their form
+		if self.hostname is not None:
+			out["hostname"] = self.hostname
+		if self.gpu_models is not None:
+			out["gpu_models"] = list(self.gpu_models)
+		return out
 
 	@classmethod
 	def from_dict(cls, data):
 		data = data or {}
 		return cls(data.get("verdict", UNKNOWN_VERDICT), data.get("source"),
 		           data.get("retained_median"), data.get("read_hz"),
-		           data.get("measured_at_unix_s"), data.get("driver_version"))
+		           data.get("measured_at_unix_s"), data.get("driver_version"),
+		           data.get("hostname"), data.get("gpu_models"))
 
 
-def resolve_mode(requested, disturbance=None):
+def current_configuration(reader=None):
+	"""{"hostname", "driver_version", "gpu_models"} of the running host, for
+	configuration_mismatch. GPU details come from NVML only when `reader` is a
+	started NvmlReader; nothing here initialises NVML or reads a counter."""
+	import platform
+	out = {"hostname": platform.node() or None, "driver_version": None, "gpu_models": None}
+	if isinstance(reader, NvmlReader) and reader.available():
+		from .hardware import nvml
+		out["driver_version"] = nvml.driver_version()
+		try:
+			out["gpu_models"] = [d.get("name") for d in reader.devices()]
+		except Exception:
+			pass
+	return out
+
+
+def configuration_mismatch(disturbance, current):
+	"""Ways the configuration a disturbance test ran on differs from `current`
+	(a current_configuration() dict). Empty when nothing known differs; a
+	field unknown on either side is not compared."""
+	if not current:
+		return []
+	out = []
+	for key, label in (("hostname", "host"), ("driver_version", "driver"),
+	                   ("gpu_models", "GPU models")):
+		tested, here = getattr(disturbance, key, None), current.get(key)
+		if tested is None or here is None:
+			continue
+		if key == "gpu_models":
+			tested, here = sorted(map(str, tested)), sorted(map(str, here))
+		if tested != here:
+			out.append(f"{label} {tested} in the test, {here} here")
+	return out
+
+
+def resolve_mode(requested, disturbance=None, current=None):
 	"""(mode, reason) for a requested mode. Never runs a diagnostic.
 
 	`auto` uses per-span counter reads (direct) only when a disturbance test
 	on this host found no effect. A DISTURBED, INCONCLUSIVE or UNKNOWN verdict
 	selects `sampled`: the run is still measured by the counter at its
 	boundaries, and per-span values are estimates, labelled as such.
+
+	`current` (0.4.0): the running configuration (current_configuration()).
+	A NOT_DETECTED verdict from a test on a different host, driver or GPU
+	model then selects `sampled` too.
 	"""
 	disturbance = disturbance or CounterDisturbance.unknown()
 	if requested in MODES:
@@ -145,6 +203,12 @@ def resolve_mode(requested, disturbance=None):
 		raise ValueError(f"mode must be one of {sorted(MODES) + [MODE_AUTO]}")
 	verdict = disturbance.verdict
 	if verdict == "NOT_DETECTED":
+		mismatch = configuration_mismatch(disturbance, current)
+		if mismatch:
+			return MODE_SAMPLED, (f"auto: counter disturbance NOT_DETECTED "
+			                 f"({disturbance.source}) but for another configuration "
+			                 f"({'; '.join(mismatch)}); per-span counter reads not "
+			                 f"enabled without evidence they are harmless here")
 		return MODE_DIRECT, (f"auto: counter disturbance NOT_DETECTED ({disturbance.source}); "
 		                f"per-span counter reads enabled")
 	if verdict == "DISTURBED":
@@ -161,38 +225,22 @@ MODE_SOURCE_CALLER = "caller"
 MODE_SOURCE_DEFAULT = "default"
 MODE_SOURCE_AEP_RUN = "aep_run"
 
-#: Session's default mode, kept for compatibility (docs/MEASUREMENT_MODES.md
-#: "SDK default mode migration").
-SESSION_DEFAULT_MODE = MODE_DIRECT
-SESSION_DEFAULT_REASON = ("default: Session's default mode (direct, per-span counter reads), "
-                          "kept for compatibility; pass mode= to choose "
-                          "(docs/MEASUREMENT_MODES.md)")
-
-#: The default Session is planned to take, and in which release (0.3.0 only
-#: announces it; nothing measured changes until then).
-SESSION_FUTURE_DEFAULT_MODE = MODE_AUTO
-SESSION_DEFAULT_CHANGES_IN = "0.4.0"
+#: Session's default mode: `auto` since 0.4.0, as in `aep run` (`direct`
+#: before; docs/MEASUREMENT_MODES.md "SDK default mode migration").
+SESSION_DEFAULT_MODE = MODE_AUTO
+SESSION_DEFAULT_REASON = "default: Session's default mode (auto since 0.4.0)"
+#: The release that changed it, and the default before it.
+SESSION_DEFAULT_CHANGED_IN = "0.4.0"
+SESSION_PREVIOUS_DEFAULT_MODE = MODE_DIRECT
 
 
 class SessionDefaultModeWarning(FutureWarning):
-	"""`Session()` was created without `mode=` and fell back to `direct`.
+	"""Deprecated: no longer emitted (0.4.0).
 
-	A FutureWarning subclass, so it is shown by default and can be filtered
-	on its own (`warnings.filterwarnings("ignore", category=...)`). Passing
-	`mode=` explicitly is the intended way to silence it.
+	0.3.0 emitted it when `Session()` was created without `mode=` and fell
+	back to `direct`. Kept so that code filtering it by category keeps
+	working; it will be removed in a later minor release.
 	"""
-
-
-SESSION_DEFAULT_WARNING = (
-	f"Session() was created without mode=, so it uses '{SESSION_DEFAULT_MODE}' "
-	f"(the GPU energy counter is read at every span's boundaries). In "
-	f"agent-energy-profiler {SESSION_DEFAULT_CHANGES_IN} the default becomes "
-	f"'{SESSION_FUTURE_DEFAULT_MODE}', as in `aep run`: it selects 'direct' only when a "
-	f"hardware report shows counter reads are harmless on this host, and 'sampled' "
-	f"otherwise. In 'sampled' mode per-span GPU energy is an estimate from averaged "
-	f"power, not a counter measurement. Pass mode='direct' to keep the current "
-	f"behaviour, or mode='auto' to adopt the new default now "
-	f"(docs/MEASUREMENT_MODES.md). This warning is shown once per process.")
 
 
 def measurement_config(mode, requested, reason, disturbance, timeline=None, source=None):

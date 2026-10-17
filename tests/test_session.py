@@ -47,6 +47,7 @@ class SessionCase(unittest.TestCase):
 	def session(self, **kw):
 		kw.setdefault("gpu", FakeCounter().reader())
 		kw.setdefault("resolution", RES)
+		kw.setdefault("mode", "direct")    # these tests pin direct-mode recording
 		return Session(self.path, **kw)
 
 	def records(self, path=None):
@@ -70,7 +71,7 @@ class TestLifecycle(SessionCase):
 		self.assertEqual([r["record_type"] for r in recs],
 		                 ["session_start", "span", "session_end"])
 		head = recs[0]
-		self.assertEqual(head["profiler_version"], "0.3.0")
+		self.assertEqual(head["profiler_version"], "0.4.0")
 		self.assertEqual(head["config"]["energy_scope"], "device")
 		self.assertEqual(head["config"]["resolution"]["basis"], "configured")
 		self.assertEqual(head["attributes"], {"run_id": "r1"})
@@ -426,7 +427,7 @@ class TestGpuAvailability(SessionCase):
 	@unittest.skipUnless(os.environ.get("AEP_REAL_GPU") == "1",
 	                     "set AEP_REAL_GPU=1 to read the real NVML counter")
 	def test_real_nvml(self):
-		with Session(self.path, resolution=RES) as s:
+		with Session(self.path, resolution=RES, mode="direct") as s:
 			with s.span("llm:x"):
 				sum(range(10**6))
 		g = self.spans()["llm:x"]["energy"]["gpu"]

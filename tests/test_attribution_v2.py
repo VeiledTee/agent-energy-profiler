@@ -112,7 +112,7 @@ class TestSessionEndToEnd(unittest.TestCase):
 			counter["v"] += 250
 			return [counter["v"]]
 		path = os.path.join(self.d, "spans.jsonl")
-		with Session(path, gpu=CallableReader(read),
+		with Session(path, mode="direct", gpu=CallableReader(read),
 		             resolution=Resolution.configured(0.1, "test")) as s:
 			with s.span("agent:step"):
 				with s.span("llm:plan"):

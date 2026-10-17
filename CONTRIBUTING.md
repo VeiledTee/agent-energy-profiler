@@ -49,8 +49,8 @@ wheel checks, and the LangGraph compatibility tests.
    measured, on which host, and what was not validated. Nothing in this
    repository has been checked against an external power meter yet.
 6. **Behaviour changes are announced first.** A changed default warns for one
-   minor release before it changes (see the `Session` mode migration in
-   `docs/MEASUREMENT_MODES.md`).
+   minor release before it changes (as `Session`'s mode did: announced in
+   0.3.0, changed in 0.4.0; see `docs/MEASUREMENT_MODES.md`).
 
 ## Pull requests
 

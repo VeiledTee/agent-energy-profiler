@@ -246,7 +246,8 @@ streams the file in batches and does not hold all spans.
 
 `tests/test_otel_modes.py` records one workload in every mode (`direct`,
 `sampled`, `hybrid`, `auto` without evidence → `sampled`, `auto` with
-`NOT_DETECTED` → `direct`). The workload has nested sync spans, two
+`NOT_DETECTED` → `direct`). Since 0.4.0, `auto` without evidence is also
+what a `Session` created without `mode=` records. The workload has nested sync spans, two
 concurrent asyncio tasks, an explicitly parented thread and application
 spans in between. Each run is attributed against a synthetic power timeline
 and exported. In every mode:

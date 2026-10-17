@@ -74,7 +74,7 @@ class V2Case(unittest.TestCase):
 class TestNestedNoDoubleCounting(V2Case):
 
 	def test_totals_use_roots_and_operations_use_exclusive(self):
-		with Session(self.spans, gpu=CallableReader(Counter_().read),
+		with Session(self.spans, mode="direct", gpu=CallableReader(Counter_().read),
 		             resolution=Resolution.configured(0.1, "test")) as s:
 			for _ in range(2):
 				with s.span("agent:step"):
@@ -113,7 +113,7 @@ class TestNestedNoDoubleCounting(V2Case):
 		self.assertNotIn("ESTIMATES_PRESENT", codes(rep))
 
 	def test_report_round_trips_through_json_and_csv(self):
-		with Session(self.spans, gpu=False) as s:
+		with Session(self.spans, mode="direct", gpu=False) as s:
 			with s.span("llm:x"):
 				pass
 		rep = self.attribute(power=False)
@@ -126,7 +126,7 @@ class TestNestedNoDoubleCounting(V2Case):
 class TestMissingValues(V2Case):
 
 	def test_missing_root_withholds_the_total_but_shows_the_partial_sum(self):
-		with Session(self.spans, gpu=CallableReader(Counter_(fail_at=(3,)).read)) as s:
+		with Session(self.spans, mode="direct", gpu=CallableReader(Counter_(fail_at=(3,)).read)) as s:
 			for _ in range(3):
 				with s.span("llm:x"):
 					pass
@@ -141,7 +141,7 @@ class TestMissingValues(V2Case):
 		self.assertFalse(rep["window"]["available"])
 
 	def test_gpu_absent(self):
-		with Session(self.spans, gpu=False) as s:
+		with Session(self.spans, mode="direct", gpu=False) as s:
 			with s.span("llm:x"):
 				pass
 		rep = self.attribute(power=False)
@@ -152,7 +152,7 @@ class TestMissingValues(V2Case):
 		self.assertEqual(rep["run"]["gpu"]["reader"], "disabled")
 
 	def test_unknown_resolution_is_warned(self):
-		with Session(self.spans, gpu=CallableReader(Counter_().read)) as s:
+		with Session(self.spans, mode="direct", gpu=CallableReader(Counter_().read)) as s:
 			with s.span("llm:x"):
 				pass
 		rep = self.attribute(power=False)
@@ -160,7 +160,7 @@ class TestMissingValues(V2Case):
 		self.assertNotIn("BELOW_RESOLUTION", codes(rep))
 
 	def test_zero_readings_are_flagged(self):
-		with Session(self.spans, gpu=CallableReader(Counter_(step=0).read)) as s:
+		with Session(self.spans, mode="direct", gpu=CallableReader(Counter_(step=0).read)) as s:
 			with s.span("llm:x"):
 				pass
 		rep = self.attribute(power=False)
@@ -172,7 +172,7 @@ class TestShared(V2Case):
 
 	def test_concurrent_roots_refuse_a_total(self):
 		counter = Counter_()
-		with Session(self.spans, gpu=CallableReader(counter.read)) as s:
+		with Session(self.spans, mode="direct", gpu=CallableReader(counter.read)) as s:
 			async def worker(name):
 				async with s.span(name):
 					await asyncio.sleep(0.01)
@@ -190,7 +190,7 @@ class TestShared(V2Case):
 		self.assertEqual(rep["window"]["domains"]["gpu"]["status"], "measured")
 
 	def test_raw_input_is_attributed_without_a_timeline(self):
-		with Session(self.spans, gpu=CallableReader(Counter_().read)) as s:
+		with Session(self.spans, mode="direct", gpu=CallableReader(Counter_().read)) as s:
 			with s.span("llm:x"):
 				pass
 		rep = report.build(self.spans)

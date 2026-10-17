@@ -186,11 +186,12 @@ class TestSessionModes(Tmp):
 		spans = [r for r in recs if r["record_type"] == "span"]
 		self.assertEqual(spans[0]["energy"]["gpu"]["reason"], "disabled")
 
-	def test_default_is_still_direct(self):
+	def test_default_is_auto_since_0_4_0(self):
 		c = Counter_()
 		recs = self.run_session(gpu=CallableReader(c.read))
-		self.assertEqual(recs[0]["config"]["measurement"]["mode"], "direct")
-		self.assertEqual(c.reads, 4)
+		meas = recs[0]["config"]["measurement"]
+		self.assertEqual((meas["mode"], meas["requested_mode"]), ("sampled", "auto"))
+		self.assertEqual(c.reads, 0)
 
 	def test_from_env_keeps_the_parents_mode_choice(self):
 		env = {"AEP_SPANS_FILE": os.path.join(self.d, "env.jsonl"),
@@ -458,6 +459,17 @@ class TestAepRunModes(Tmp):
 		self.assertEqual(header["config"]["resolution"]["gpu_update_interval_s"], 0.1)
 		energy_calls, _ = self.calls()
 		self.assertGreater(energy_calls, 40)                 # per-span reads happened
+
+	def test_auto_ignores_a_verdict_from_another_driver(self):
+		# 0.4.0: a NOT_DETECTED test only counts for the configuration it ran on
+		hw = {"generated_at": 1.0, "gpu": {"driver_version": "fake-0.9"},
+		      "gpu_counter_disturbance": {"status": "SUPPORTED", "verdict": "NOT_DETECTED",
+		                                  "retained_median": 1.0, "read_hz": 10.0}}
+		run, header, rows, _ = self.aep_run(hw=hw)
+		self.assertEqual(run["measurement"]["mode"], "sampled")
+		self.assertIn("another configuration", run["measurement"]["mode_reason"])
+		self.assertIn("fake-0.9", header["config"]["measurement"]["mode_reason"])
+		self.assertEqual(header["config"]["measurement"]["mode"], "sampled")
 
 	def test_hybrid_with_an_explicit_counter_rate(self):
 		run, header, rows, stdout = self.aep_run("--mode", "hybrid", "--counter-hz", "10")

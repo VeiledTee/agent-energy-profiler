@@ -313,10 +313,10 @@ class TestModeProvenance(Tmp):
 				pass
 		return self.records(p)[0]["config"]["measurement"]
 
-	def test_default_is_direct_and_says_it_was_defaulted(self):
+	def test_default_is_auto_and_says_it_was_defaulted(self):
 		meas = self.header()
 		self.assertEqual((meas["mode"], meas["requested_mode"], meas["mode_source"]),
-		                 ("direct", "direct", "default"))
+		                 ("sampled", "auto", "default"))
 		self.assertTrue(meas["mode_reason"].startswith("default:"))
 
 	def test_every_explicit_mode_is_recorded_as_the_callers(self):
@@ -385,7 +385,25 @@ class TestModeProvenance(Tmp):
 				with s.span("x:y"):
 					pass
 			return {w["code"] for w in report.build(p)["warnings"]}
-		self.assertIn("DIRECT_MODE_BY_DEFAULT", codes())
+
+		def legacy_codes(verdict="UNKNOWN"):
+			# a 0.2.0/0.3.0 session: direct because Session's default was direct
+			p = self.path()
+			with Session(p, gpu=CallableReader(Log().read), mode="direct",
+			             disturbance=CounterDisturbance(verdict, "t")) as s:
+				with s.span("x:y"):
+					pass
+			with open(p) as f:
+				lines = [json.loads(line) for line in f]
+			lines[0]["config"]["measurement"].update(
+				requested_mode="direct", mode_source="default",
+				mode_reason="default: Session's default mode (direct, per-span counter reads)")
+			with open(p, "w") as f:
+				f.writelines(json.dumps(r) + "\n" for r in lines)
+			return {w["code"] for w in report.build(p)["warnings"]}
+		self.assertIn("DIRECT_MODE_BY_DEFAULT", legacy_codes())
+		self.assertNotIn("DIRECT_MODE_BY_DEFAULT", legacy_codes("NOT_DETECTED"))
+		self.assertNotIn("DIRECT_MODE_BY_DEFAULT", codes())          # 0.4.0 default
 		self.assertNotIn("DIRECT_MODE_BY_DEFAULT", codes(mode="direct"))
 		self.assertNotIn("DIRECT_MODE_BY_DEFAULT",
 		                 codes(disturbance=CounterDisturbance("NOT_DETECTED", "t")))

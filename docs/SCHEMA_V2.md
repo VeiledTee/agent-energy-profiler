@@ -228,7 +228,7 @@ and are read and attributed exactly as before.
 | `span_counter_reads` | whether spans read the GPU counter at their boundaries |
 | `semantics` | text: what per-span and run GPU energy mean in this mode |
 | `timeline` | the sampler's declared reads (as in the sidecar below), or null |
-| `counter_disturbance` | `verdict` (`DISTURBED`, `NOT_DETECTED`, `INCONCLUSIVE`, `UNKNOWN`), `source`, `retained_median`, `read_hz`, `measured_at_unix_s`, `driver_version` |
+| `counter_disturbance` | `verdict` (`DISTURBED`, `NOT_DETECTED`, `INCONCLUSIVE`, `UNKNOWN`), `source`, `retained_median`, `read_hz`, `measured_at_unix_s`, `driver_version`; since 0.4.0 also `hostname` and `gpu_models` of the tested configuration, present only when the hardware report gave them |
 
 `config.gpu.driver_version` is added when NVML is read.
 

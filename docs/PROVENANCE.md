@@ -1036,6 +1036,85 @@ been checked on physical hardware. The CI workflow has not run on a hosted
 runner. Windows and macOS are untested (declared unsupported for
 measurement).
 
+## Milestone 8: conservative SDK defaults and v0.4.0
+
+Migration and how to compare experiments across versions:
+[MEASUREMENT_MODES.md](MEASUREMENT_MODES.md#sdk-default-mode-migration).
+Release notes: [CHANGELOG.md](../CHANGELOG.md). Publication checklist:
+[RELEASING.md](RELEASING.md).
+
+**Changes.**
+
+- Version 0.4.0.
+- **`Session()` without `mode=` uses `auto`** (before: `direct`), recorded
+  as `requested_mode: "auto"`, `mode_source: "default"`.
+  `Session.from_env()` follows it when nothing else chooses a mode. The
+  0.3.0 `SessionDefaultModeWarning` is no longer emitted; the class remains
+  for code that filters it.
+- **`auto` checks the configuration of the disturbance test.**
+  `CounterDisturbance` keeps the report's `hostname`, `driver_version` and
+  `gpu_models`. A `NOT_DETECTED` verdict selects `direct` only where none of
+  them differs from the running host (fields unknown on either side are not
+  compared). Otherwise `sampled`, with the difference in `mode_reason`. A
+  `Session` checks at `start()`, after NVML is initialised; `aep run` checks
+  in the parent and the child keeps its choice. No diagnostic is ever run.
+  The two new header keys are written only when known, so headers without
+  them keep their 0.3.0 form.
+- **Report wording** (no measured value changed):
+  - "none: every top-level span with GPU energy was measured" was printed
+    whenever no estimate existed, including with no GPU at all. The report
+    now distinguishes "every top-level span has a measured GPU value", "N
+    of M top-level spans have neither a measurement nor an estimate
+    (reasons)" and "no top-level spans".
+  - Withheld measured totals name the missing spans' reasons; the estimate
+    line says how many top-level spans it covers and why no sum is given
+    when they overlap; the window line names why a domain is `n/a`.
+  - Counter-disturbance warnings (`COUNTER_DISTURBANCE_UNKNOWN`,
+    `COUNTER_DISTURBED`, `DIRECT_MODE_BY_DEFAULT`) need a counter that was
+    actually read (a measured or invalid span value, or a sampler counter).
+    `DIRECT_MODE_BY_DEFAULT` now applies only to sessions recorded before
+    0.4.0.
+  - `SPAN_ESTIMATES_ONLY` and `NO_TIMELINE` no longer mention a run counter,
+    estimates or in-band energy that the run does not have.
+    `DOMAIN_UNAVAILABLE` covers a GPU missing for a hardware reason (not
+    for `not_read_by_mode`, a mode choice).
+  - The measurement line states what per-span and whole-run GPU energy mean
+    in the recorded mode, and whether the whole-run value exists.
+- `_compat.sum` and its tests are unchanged.
+- Tests: `tests/test_default_mode.py` (15) replaces
+  `tests/test_default_mode_warning.py`; `tests/test_report_wording.py` (9);
+  an `aep run` test with a report from another driver. Tests that pin
+  direct-mode recording now pass `mode="direct"` instead of relying on the
+  default.
+
+**Behaviour changes.** Code that passes no mode now records estimated
+per-span GPU energy on hosts without a matching `NOT_DETECTED` verdict, and
+`auto` no longer accepts a `NOT_DETECTED` verdict from another host, driver
+or GPU. Explicit `direct`, `sampled` and `hybrid` are unchanged. No stored
+artifact, golden fixture or existing field meaning changed.
+
+**Validation on this machine (RTX 4090, WSL2, driver 610.88).**
+
+| Check | Result |
+|---|---|
+| Full suite, `.venv` (3.12) | 556 passed, 10 skipped |
+| Full suite, Python 3.9 / 3.10 / 3.11 / 3.12 / 3.13 / 3.14 | 553 / 555 / 555 / 556 / 556 / 555 passed, no failures |
+| v1 and v2 golden tests | passed; fixture files unchanged |
+| Frozen research runs | identical on 3.12, 3.9 and 3.14 |
+| Explicit modes vs 0.3.0 (`2310de4`): one workload (nested, async, thread, failing read, error span) per mode, records compared without ids and clocks, on 3.12, 3.9 and 3.14 | `direct`, `direct` with a failing read, `direct` without GPU, `sampled`, `hybrid`, `auto` (unknown, `NOT_DETECTED`, `DISTURBED`) identical, same counter reads (14 / 0). 0.3.0's implicit default equals 0.4.0's explicit `direct` except who chose it; 0.4.0's implicit default equals explicit `auto` |
+| Real GPU (NVML) | default → `sampled`, no per-span reads; explicit `direct` measured; M5 report (`DISTURBED`) → `sampled`; `NOT_DETECTED` for this host/driver/GPU → `direct`; same report with another driver or host → `sampled` at `start()` |
+| Mode, default and report tests repeated 20 times | 20 of 20 passed |
+| LangGraph 1.2.15 venv | 76 passed |
+| Build | `twine check --strict` passed; sdist 176 files, no `results/`, no `CLAUDE.md` |
+| Clean wheel: minimal 3.9 / minimal 3.14 / `[test,gpu]` 3.13 / `[otlp]` 3.13 / `[otel]` 3.9 at OpenTelemetry 1.20.0 | 464 / 466 / 543 / 494 / 491 passed; no failures |
+| `pip-audit` (`[test,gpu]`, `[otlp]`) | no known vulnerabilities (2026-10-16) |
+| First run, minimal wheel, 3.9, `-W error` | default session runs `sampled`, no warning; report says GPU `no_counter` everywhere and claims nothing measured |
+| Thesis repository | clean, still at `08bbc96` |
+
+**Not established.** Accuracy of any value (no external meter); RAPL on
+physical hardware; the disturbance finding on a second GPU or driver; CI on
+a hosted runner; Windows and macOS.
+
 ## Remaining references to the research repository
 
 The research repository is not a dependency: no code imports it, no test
@@ -1069,3 +1148,4 @@ schema v1 and generic in role. Renaming them is a schema-v2 decision.
 | 0.2.0 + M5 (version not bumped) | Measurement modes (`direct`/`sampled`/`hybrid`/`auto`), sampler counter policies, measurement provenance (model version 2), run counter and interval diagnostics, disturbance-aware report warnings; `aep run` defaults to `auto`. Existing fields keep their meaning. | identical: v1 fixtures, frozen runs, and the v2 fixture |
 | 0.2.0 + M6 (version not bumped) | Session hooks, `bind`, external trace parent; optional `otel` module and `aep otel-export`; `analyze()`; `mode_source` provenance and the `DIRECT_MODE_BY_DEFAULT` warning (Session's default mode unchanged); LangGraph guidance. No measured value or existing field meaning changed. | identical: v1 fixtures, frozen runs, and the v2 fixture |
 | 0.3.0 (M7) | `SessionDefaultModeWarning` for `Session()` without `mode=` (default still `direct`; `auto` planned for 0.4.0); 3.12 float summation on every supported Python (`_compat.sum`), which makes 3.9–3.11 and 3.14 reproduce the reference artifacts; release files, CI, wheel checks. No measured value on 3.12, no field meaning and no default changed. | identical: v1 fixtures and the v2 fixture on Python 3.9–3.14; frozen runs on 3.12 and 3.9 |
+| 0.4.0 (M8) | `Session()` defaults to `auto` (was `direct`); `auto` accepts a `NOT_DETECTED` verdict only for the tested host, driver and GPU models; `SessionDefaultModeWarning` no longer emitted; report wording fixed (no claim of measured GPU energy without a GPU, disturbance warnings only for counters that were read). Explicit modes unchanged; no stored artifact or field meaning changed. | identical: v1 fixtures and the v2 fixture on Python 3.9–3.14; frozen runs on 3.12, 3.9 and 3.14 |

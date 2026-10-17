@@ -121,6 +121,18 @@ def _domain_state(d):
 	return "measured_resolution_unknown", None
 
 
+def _missing_reason(d):
+	"""Why a domain has no measured value: its reason, else its status."""
+	if not d:
+		return "not recorded"
+	return d.get("reason") or d.get("status") or "unknown"
+
+
+def _reasons_text(reasons):
+	"""'no_counter' or 'no_counter x2, read_failed' from a {reason: n} dict."""
+	return ", ".join(r if n == 1 else f"{r} x{n}" for r, n in sorted(reasons.items()))
+
+
 def _window(span):
 	s, e = span.get("start_monotonic_s"), span.get("end_monotonic_s")
 	if s is None or e is None:
@@ -145,7 +157,9 @@ class _Accumulator:
 		self.coverage = {d: Counter() for d in DOMAINS}
 		self.reasons = {d: Counter() for d in DOMAINS}
 		self.zero_gpu = 0
-		self.roots = []      # (window, {domain: value or None}, total, estimate)
+		# (window, {domain: value or None}, total, estimate, (estimate, counter)
+		#  or None, {domain: why it has no measured value})
+		self.roots = []
 		self.labels = defaultdict(lambda: {"durations": [], "errors": 0,
 		                                   "energy": defaultdict(lambda: [0.0, 0, 0]),
 		                                   "estimated_gpu": [0.0, 0]})
@@ -206,11 +220,13 @@ class _Accumulator:
 		if depth == 0:
 			total = span.get("total") or attribution_v2._total(
 				{k: v for k, v in energy.items() if v})
-			self.roots.append((_window(span),
-			                   {d: measured(energy.get(d)) for d in BOUNDARY},
+			values = {d: measured(energy.get(d)) for d in BOUNDARY}
+			self.roots.append((_window(span), values,
 			                   total.get("energy_j"), est_value,
 			                   (est_any, gpu_measured) if (est_any is not None and
-			                                               gpu_measured is not None) else None))
+			                                               gpu_measured is not None) else None,
+			                   {d: _missing_reason(energy.get(d)) for d in BOUNDARY
+			                    if values[d] is None}))
 
 		label = self.labels[span.get("name")]
 		if span.get("duration_s") is not None:
@@ -273,11 +289,24 @@ def _totals(acc):
 			row["reason"] = (None if row["total_j"] is not None else
 			                 f"{n_roots - len(present)} of {n_roots} top-level spans "
 			                 f"lack a measured value")
+		if domain != "total":
+			missing = Counter(r[5][domain] for r in acc.roots if domain in r[5])
+			if missing:
+				row["missing_reasons"] = dict(sorted(missing.items()))
+				if row["reason"] and not overlap:
+					row["reason"] += f" ({_reasons_text(missing)})"
 		out["domains"][domain] = row
 	est = [r[3] for r in acc.roots if r[3] is not None]
+	# top-level spans with neither a GPU measurement nor a GPU estimate
+	neither = Counter(r[5]["gpu"] for r in acc.roots if r[3] is None and "gpu" in r[5])
 	out["estimated_gpu"] = {
 		"sum_j": (math.fsum(est) if (est and not overlap) else None),
 		"n_spans": len(est),
+		"n_top_level": n_roots,
+		"n_without_gpu_value": sum(neither.values()),
+		"without_gpu_value_reasons": dict(sorted(neither.items())),
+		"reason": ("top-level spans overlap in time: device energy would be counted "
+		           "more than once") if (est and overlap) else None,
 		"scope": "top-level spans with NO GPU counter measurement",
 		"method": "power_integration (integrated sampled board power)",
 		"note": "an estimate; never added to the measured totals",
@@ -417,11 +446,18 @@ def _warnings(acc, rep):
 		detail = ", ".join(f"{d}: {n}" for d, n in invalid.items() if n)
 		_warn(w, "INVALID_MEASUREMENTS", f"Counter readings were invalid ({detail}); see "
 		      f"coverage reasons.")
-	for domain in ("cpu_package", "dram"):
+	for domain in ("gpu", "cpu_package", "dram"):
 		cov = acc.coverage[domain]
+		reasons = dict(acc.reasons[domain])
+		if domain == "gpu":
+			# not reading the counter per span is a mode choice, not missing
+			# hardware: SPAN_ESTIMATES_ONLY covers it
+			reasons.pop("not_read_by_mode", None)
+			if not reasons and not cov.get("invalid"):
+				continue
 		if cov and not any(k.startswith("measured") for k in cov):
 			_warn(w, "DOMAIN_UNAVAILABLE", f"{domain} was not measured for any span "
-			      f"(reasons: {dict(acc.reasons[domain]) or 'none recorded'}); totals "
+			      f"(reasons: {reasons or 'none recorded'}); totals "
 			      f"over the gpu+cpu_package+dram boundary are unavailable.")
 	if acc.clock_anomalies:
 		_warn(w, "CLOCK_ANOMALY", f"{acc.clock_anomalies} spans saw the wall clock step "
@@ -430,8 +466,16 @@ def _warnings(acc, rep):
 	verdict = (meas.get("counter_disturbance") or {}).get("verdict", "UNKNOWN")
 	timeline = meas.get("timeline_declared") or meas.get("timeline") or {}
 	dense_timeline = (timeline.get("counter_hz_effective") or 0) >= 2
-	frequent_reads = (not meas.get("recorded") or meas.get("span_counter_reads")
-	                  or dense_timeline)
+	run_counter = rep.get("run_counter") or {}
+	gpu_cfg = rep["run"].get("gpu") or {}
+	# A counter that was never read cannot have been disturbed: per-span reads
+	# count only where some span got a counter value (measured or invalid),
+	# timeline reads only where the sampler had a counter.
+	span_reads = ((not meas.get("recorded") or meas.get("span_counter_reads"))
+	              and (n_gpu_measured or gpu_cov.get("invalid")))
+	timeline_reads = dense_timeline and (run_counter.get("status") == "measured"
+	                                     or gpu_cfg.get("enabled"))
+	frequent_reads = bool(span_reads or timeline_reads)
 	if not meas.get("recorded"):
 		_warn(w, "MEASUREMENT_NOT_RECORDED", meas.get("note", "measurement mode not recorded"))
 	if frequent_reads and verdict in ("UNKNOWN", "INCONCLUSIVE"):
@@ -445,19 +489,38 @@ def _warnings(acc, rep):
 		      "counter was read often during this run: measured GPU values are biased low "
 		      "by an amount that depends on the read rate. Prefer --mode sampled or hybrid.")
 	if (meas.get("mode_source") == m.MODE_SOURCE_DEFAULT and meas.get("span_counter_reads")
-	        and verdict != "NOT_DETECTED"):
+	        and meas.get("requested_mode") == m.SESSION_PREVIOUS_DEFAULT_MODE
+	        and span_reads and verdict != "NOT_DETECTED"):
+		# only sessions recorded before 0.4.0, when Session's default was direct
 		_warn(w, "DIRECT_MODE_BY_DEFAULT", f"The session used Session's default mode "
-		      f"(direct: per-span GPU counter reads) without a disturbance test showing "
-		      f"that is harmless here (verdict {verdict}). Pass mode='auto' with a hardware "
-		      f"report, or choose a mode explicitly (docs/MEASUREMENT_MODES.md).")
+		      f"before 0.4.0 (direct: per-span GPU counter reads) without a disturbance "
+		      f"test showing that is harmless here (verdict {verdict}). Since 0.4.0 the "
+		      f"default is auto; pass mode='auto' with a hardware report, or choose a mode "
+		      f"explicitly (docs/MEASUREMENT_MODES.md).")
 	if meas.get("recorded") and not meas.get("span_counter_reads"):
-		_warn(w, "SPAN_ESTIMATES_ONLY", f"Mode {meas.get('mode')}: spans were not measured "
-		      f"with the GPU counter. Per-span GPU values are estimates (integrated averaged "
-		      f"power); the measured GPU figure is the run counter, which covers the whole "
-		      f"sampler window and cannot be split between spans.")
+		text = (f"Mode {meas.get('mode')}: spans were not measured with the GPU counter, "
+		        f"so per-span GPU values can only be estimates (integrated averaged power).")
+		if acc.estimate_only_gpu:
+			text += f" {acc.estimate_only_gpu} spans have one."
+		else:
+			text += (" No span has one (" + ("no hardware timeline was attributed"
+			         if not rep["window"].get("available") else "the timeline gave no GPU "
+			         "power for the spans") + ").")
+		if run_counter.get("status") == "measured":
+			text += (" The measured GPU figure is the run counter, which covers the whole "
+			         "sampler window and cannot be split between spans.")
+		else:
+			text += (" No whole-run GPU counter measurement is available"
+			         + (f" ({run_counter.get('status')}: {run_counter.get('reason')})"
+			            if run_counter else "") + ".")
+		_warn(w, "SPAN_ESTIMATES_ONLY", text)
 	if rep["source"].get("attributed_on_the_fly"):
 		_warn(w, "NO_TIMELINE", "The input was not attributed; it was attributed without "
-		      "a hardware timeline, so only in-band GPU energy is available.")
+		      "a hardware timeline, so " + (
+		          "only in-band GPU energy is available."
+		          if (not meas.get("recorded") or meas.get("span_counter_reads")) else
+		          "no energy is available for its spans: this mode does not read the GPU "
+		          "counter per span, and CPU, DRAM and GPU estimates need the timeline."))
 	return w
 
 
@@ -702,6 +765,14 @@ def render_text(rep, top=20):
 		L.append(f"             counter disturbance {dist.get('verdict')} "
 		         f"(source: {dist.get('source') or 'none'})"
 		         + (f", driver {meas['driver_version']}" if meas.get("driver_version") else ""))
+		sem = meas.get("semantics") or {}
+		if sem:
+			L.append(f"             per-span GPU energy: {sem.get('gpu_span_energy')}")
+			rc = rep.get("run_counter") or {}
+			L.append(f"             whole-run GPU energy: {sem.get('gpu_run_energy')}"
+			         + ("" if rc.get("status") == "measured" else
+			            f" (not available for this run: "
+			            f"{rc.get('reason') or rc.get('status') or 'no sampler timeline'})"))
 	else:
 		L.append(f"measurement  not recorded: {meas.get('note')}")
 	L.append("")
@@ -720,10 +791,26 @@ def render_text(rep, top=20):
 			L.append(f"  {label:<22}{'n/a':>12}    {row.get('reason') or ''}")
 	est = t["estimated_gpu"]
 	L.append("ESTIMATED ENERGY (spans with no GPU measurement; never added above)")
+	n_top = est.get("n_top_level", t.get("n_top_level"))
+	without = est.get("n_without_gpu_value")
+	why = _reasons_text(est.get("without_gpu_value_reasons") or {})
 	if est["n_spans"]:
-		L.append(f"  gpu (power integration){_j(est['sum_j'], 10)} J over {est['n_spans']} spans")
+		if est["sum_j"] is not None:
+			L.append(f"  gpu (power integration){_j(est['sum_j'], 10)} J over "
+			         f"{est['n_spans']} of {n_top} top-level spans")
+		else:
+			L.append(f"  gpu (power integration){'n/a':>10}    {est['n_spans']} of {n_top} "
+			         f"top-level spans have one; no sum ({est.get('reason')})")
+		if without:
+			L.append(f"  {without} other top-level spans have neither a GPU measurement "
+			         f"nor an estimate ({why})")
+	elif not n_top:
+		L.append("  none: no top-level spans")
+	elif without:
+		L.append(f"  none: {without} of {n_top} top-level spans have neither a GPU "
+		         f"measurement nor an estimate ({why})")
 	else:
-		L.append("  none: every top-level span with GPU energy was measured")
+		L.append("  none needed: every top-level span has a measured GPU value")
 	cmp_ = t.get("gpu_estimate_vs_counter") or {}
 	if cmp_.get("n_spans") and cmp_.get("counter_sum_j"):
 		L.append(f"  (diagnostic: on {cmp_['n_spans']} measured spans, integrated power gives "
@@ -733,7 +820,10 @@ def render_text(rep, top=20):
 	if win.get("available"):
 		parts = []
 		for d, v in win["domains"].items():
-			parts.append(f"{d} {_j(v.get('energy_j'), 0).strip()} J")
+			if v.get("energy_j") is None:
+				parts.append(f"{d} n/a ({v.get('reason') or v.get('status')})")
+			else:
+				parts.append(f"{d} {_j(v.get('energy_j'), 0).strip()} J")
 		L.append(f"  {win['basis']}: " + ", ".join(parts))
 	else:
 		L.append(f"  n/a ({win.get('reason')})")

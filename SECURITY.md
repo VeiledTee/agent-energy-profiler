@@ -33,7 +33,8 @@ Useful for judging the impact of a report:
 - **Recorded data can be sensitive.** Span attributes are whatever your code
   passes (prompts or user ids, if you choose to record them). Schema-v2
   session headers record the process id, platform, Python version and GPU
-  names and driver; v1 events also record the hostname and the git commit
+  names and driver, and, since 0.4.0, the hostname from a hardware report
+  passed for `auto` mode; v1 events also record the hostname and the git commit
   of the working directory; `aep validate` reports the hostname. Review
   artifacts before sharing them or exporting them to a tracing backend.
 

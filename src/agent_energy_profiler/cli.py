@@ -114,7 +114,18 @@ def cmd_run(args, rest):
 	               if args.hardware_report else m.CounterDisturbance.unknown())
 	mode_source = m.MODE_SOURCE_DEFAULT if args.mode is None else m.MODE_SOURCE_CALLER
 	requested_mode = args.mode or m.MODE_AUTO
-	mode, mode_reason = m.resolve_mode(requested_mode, disturbance)
+	reader = None
+	if args.gpu != "off":
+		candidate = m.NvmlReader()
+		try:
+			if candidate.start():
+				reader = candidate
+		except Exception:
+			reader = None
+	# auto applies a NOT_DETECTED verdict only to the configuration it was
+	# measured on (0.4.0)
+	mode, mode_reason = m.resolve_mode(requested_mode, disturbance,
+	                                   m.current_configuration(reader))
 	counter_hz = (args.counter_hz if args.counter_hz is not None
 	              else m.MODES[mode]["timeline_counter_hz"])
 	if args.no_sampler:
@@ -136,14 +147,6 @@ def cmd_run(args, rest):
 		                               "timeline": timeline}),
 	})
 
-	reader = None
-	if args.gpu != "off":
-		candidate = m.NvmlReader()
-		try:
-			if candidate.start():
-				reader = candidate
-		except Exception:
-			reader = None
 	sampler = (None if args.no_sampler
 	           else Sampler(power_file, hz=args.power_hz, counter_hz=counter_hz))
 
@@ -418,8 +421,9 @@ def build_parser():
 	p.add_argument("--out-dir", default="", help="default: aep-runs/<timestamp>")
 	p.add_argument("--mode", choices=("auto", "direct", "sampled", "hybrid"), default=None,
 	               help="measurement mode (default auto: per-span GPU counter reads only "
-	                    "if a disturbance test from --hardware-report found no effect; "
-	                    "otherwise sampled). See docs/MEASUREMENT_MODES.md")
+	                    "if a disturbance test from --hardware-report found no effect on "
+	                    "this host, driver and GPU; otherwise sampled). See "
+	                    "docs/MEASUREMENT_MODES.md")
 	p.add_argument("--hardware-report", default="",
 	               help="`aep validate --counter-disturbance --json` report: the GPU "
 	                    "counter interval and the counter-disturbance verdict")

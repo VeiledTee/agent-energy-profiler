@@ -7,6 +7,65 @@ Versions follow [Semantic Versioning](https://semver.org/); before 1.0, a
 minor release may change behaviour, and every such change is announced one
 minor release ahead with a warning.
 
+## 0.4.0 — unreleased
+
+### Changed: `Session`'s default mode is `auto`
+
+- **`Session()` without `mode=` now uses `auto`** (before: `direct`), as
+  `aep run` already did. Without a hardware report showing that counter
+  reads are harmless on this configuration, `auto` resolves to `sampled`:
+  **per-span GPU energy becomes an estimate** (`estimates.gpu`) instead of
+  a counter measurement (`energy.gpu`), and measured GPU energy covers the
+  whole run. `Session.from_env()` follows the same default when neither
+  `aep run`, `mode=` nor `default_mode=` chooses one.
+- **Comparing with earlier results:** check each artifact's `mode`,
+  `requested_mode` and `mode_source` (in the session header and on every
+  report's `measurement` line) before comparing per-span GPU numbers.
+  Whole-run measured GPU energy is comparable across modes. Pass
+  `mode="direct"` to reproduce 0.3.0 behaviour exactly.
+- `auto` now applies a `NOT_DETECTED` disturbance verdict only to the
+  configuration it was measured on: host name, NVIDIA driver version and
+  GPU models are compared where the hardware report and the running host
+  both know them. A report from another machine or driver selects
+  `sampled`, and `mode_reason` says why. `CounterDisturbance` records
+  `hostname` and `gpu_models` from the report (new optional header keys).
+- Explicit `mode="direct"`, `"sampled"` and `"hybrid"` are unchanged.
+
+### Deprecated
+
+- `SessionDefaultModeWarning` is no longer emitted. The class remains so
+  that code filtering it keeps working; it will be removed in a later minor
+  release.
+
+### Fixed: report wording
+
+- With no GPU measured and no estimate, the report said "every top-level
+  span with GPU energy was measured". It now says how many top-level spans
+  have neither a measurement nor an estimate, and why (`disabled`,
+  `no_counter`, `not_read_by_mode`, `read_failed`, ...).
+- Measured totals that are withheld name the reasons of the missing spans;
+  the estimate line says how many of the top-level spans it covers, and why
+  no sum is given when top-level spans overlap; the window line names why a
+  domain is `n/a`.
+- `COUNTER_DISTURBANCE_UNKNOWN`, `COUNTER_DISTURBED` and
+  `DIRECT_MODE_BY_DEFAULT` are no longer raised for a counter that was never
+  read (no GPU). `DIRECT_MODE_BY_DEFAULT` applies only to sessions recorded
+  before 0.4.0.
+- `SPAN_ESTIMATES_ONLY` no longer refers to a run counter or to estimates
+  that do not exist; `DOMAIN_UNAVAILABLE` now also covers a GPU that was
+  never measured for a hardware reason.
+- The text report states what per-span and whole-run GPU energy mean in the
+  recorded mode.
+- New report keys: `totals.domains.*.missing_reasons`,
+  `totals.estimated_gpu.{n_top_level, n_without_gpu_value,
+  without_gpu_value_reasons, reason}`.
+
+### Unchanged
+
+- No stored artifact and no existing field changed meaning; v1 and v2
+  golden fixtures and the frozen research runs are reproduced exactly.
+  Float summation (`_compat.sum`) is unchanged.
+
 ## 0.3.0 — unreleased
 
 ### Deprecation announced
