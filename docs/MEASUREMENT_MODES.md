@@ -45,7 +45,7 @@ What these numbers do and do not support:
 ### `auto`
 
 `auto` never runs a diagnostic. It uses the counter-disturbance verdict it is
-given (from `aep validate --counter-disturbance --json hw.json`, passed as
+given (from `agent-energy-profiler validate --counter-disturbance --json hw.json`, passed as
 `--hardware-report`, or `Session(disturbance=...)`):
 
 | Verdict | Mode chosen | Why |
@@ -65,20 +65,20 @@ report.
 | Entry point | Default | Changed in M5? |
 |---|---|---|
 | `Session(...)` (SDK) | **`auto` since 0.4.0** (`direct` before) | no; changed in 0.4.0 ([migration](#sdk-default-mode-migration)). The header says the mode was defaulted (`mode_source: "default"`) |
-| `Session.from_env(...)` | under `aep run`: `aep run`'s mode (`mode_source: "aep_run"`); on its own: `default_mode=` if given (M6), else as `Session` | — |
-| `aep run` | `--mode auto` (so `sampled` unless a hardware report says `NOT_DETECTED`); sampler power 10 Hz, counter at boundaries | **yes**: M3 read the counter per span and on every sampler row |
-| `aep sample` / `sampling.Sampler` | counter on every row | no; new `--counter-hz` / `counter_hz=` |
-| `aep attribute` (v1 and v2), `aep report` | unchanged for existing inputs | new sections only for inputs that declare M5 provenance |
+| `Session.from_env(...)` | under `agent-energy-profiler run`: `agent-energy-profiler run`'s mode (`mode_source: "aep_run"`); on its own: `default_mode=` if given (M6), else as `Session` | — |
+| `agent-energy-profiler run` | `--mode auto` (so `sampled` unless a hardware report says `NOT_DETECTED`); sampler power 10 Hz, counter at boundaries | **yes**: M3 read the counter per span and on every sampler row |
+| `agent-energy-profiler sample` / `sampling.Sampler` | counter on every row | no; new `--counter-hz` / `counter_hz=` |
+| `agent-energy-profiler attribute` (v1 and v2), `agent-energy-profiler report` | unchanged for existing inputs | new sections only for inputs that declare M5 provenance |
 
 `mode_source` (M6) records who chose the requested mode: `caller` (passed
 explicitly, including `default_mode=`), `default` (an entry point's default),
-`aep_run` (a session configured by `aep run`). In `run.json`, `default` means
-`aep run` was not given `--mode`.
+`aep_run` (a session configured by `agent-energy-profiler run`). In `run.json`, `default` means
+`agent-energy-profiler run` was not given `--mode`.
 
 ## Hardware-dependent decisions
 
 - **The disturbance finding is host-specific.** Run
-  `aep validate --counter-disturbance --json hw.json` on each host (and after
+  `agent-energy-profiler validate --counter-disturbance --json hw.json` on each host (and after
   driver changes) and pass `--hardware-report hw.json`.
 - **With no GPU** every mode records GPU energy as `unavailable`
   (`no_counter` or `disabled`); the run counter is unavailable too.
@@ -107,7 +107,7 @@ same `timeline` block. Field definitions: [SCHEMA_V2.md](SCHEMA_V2.md).
   from agent_energy_profiler.measurement import CounterDisturbance
   from agent_energy_profiler.sampling import Sampler
 
-  hw = "hw.json"   # aep validate --counter-disturbance --json hw.json
+  hw = "hw.json"   # agent-energy-profiler validate --counter-disturbance --json hw.json
   with Session("spans.jsonl", mode="auto",
                disturbance=CounterDisturbance.from_hardware_report(hw),
                sampler=Sampler("power.csv", hz=10, counter_hz=0)) as session:
@@ -115,8 +115,8 @@ same `timeline` block. Field definitions: [SCHEMA_V2.md](SCHEMA_V2.md).
   ```
 
   Pick the sampler's `counter_hz` to match the mode (`0` for `direct` and
-  `sampled`, e.g. `1` for `hybrid`); `aep run` does this for you.
-- **`aep run` users** get `sampled` by default now. To keep per-span counter
+  `sampled`, e.g. `1` for `hybrid`); `agent-energy-profiler run` does this for you.
+- **`agent-energy-profiler run` users** get `sampled` by default now. To keep per-span counter
   measurement, either test the host and pass `--hardware-report hw.json`
   (`auto` then chooses `direct` if nothing was detected) or pass
   `--mode direct` explicitly.
@@ -126,7 +126,7 @@ same `timeline` block. Field definitions: [SCHEMA_V2.md](SCHEMA_V2.md).
 
 ## SDK default mode migration
 
-**Since 0.4.0, `Session()` without `mode=` uses `auto`**, like `aep run`.
+**Since 0.4.0, `Session()` without `mode=` uses `auto`**, like `agent-energy-profiler run`.
 Before 0.4.0 it used `direct`. On a host without a disturbance test result
 (the usual case) `auto` resolves to `sampled`, so code that passes no mode
 now records **estimated** per-span GPU energy where it used to record
@@ -148,7 +148,7 @@ now records **estimated** per-span GPU energy where it used to record
 | `Session(path, mode="auto", ...)` | `auto` | `auto`, plus the configuration check below |
 | `Session.from_env(path)`, run on its own | `direct`, warns once | `auto`; no warning |
 | `Session.from_env(path, default_mode=...)`, run on its own | `default_mode` | unchanged |
-| `Session.from_env(...)` under `aep run` | `aep run`'s choice | unchanged |
+| `Session.from_env(...)` under `agent-energy-profiler run` | `agent-energy-profiler run`'s choice | unchanged |
 
 Every session records `mode` (what ran), `requested_mode`, `mode_reason`,
 `mode_source` (`caller`, `default` or `aep_run`) and the disturbance verdict
@@ -163,7 +163,7 @@ Only when all of these hold:
 
 1. a disturbance verdict was supplied
    (`disturbance=CounterDisturbance.from_hardware_report("hw.json")`, or
-   `aep run --hardware-report hw.json`), and it is `NOT_DETECTED`;
+   `agent-energy-profiler run --hardware-report hw.json`), and it is `NOT_DETECTED`;
 2. **(new in 0.4.0)** the configuration that test ran on matches the running
    one: host name, NVIDIA driver version and GPU models, each compared when
    both the report and the running host know it. A report from another
@@ -172,10 +172,10 @@ Only when all of these hold:
 
 Otherwise `sampled`. `auto` never runs the disturbance test itself: the test
 takes about 40 s and loads the GPU, so it runs only through
-`aep validate --counter-disturbance`. For a `Session`, the configuration is
+`agent-energy-profiler validate --counter-disturbance`. For a `Session`, the configuration is
 checked when the session starts (after NVML is initialised), so
 `session.mode` can change from `direct` to `sampled` at `start()`. Under
-`aep run` the parent process checks it once and the program's session keeps
+`agent-energy-profiler run` the parent process checks it once and the program's session keeps
 that choice.
 
 ### What changes for code that passes no mode
@@ -186,7 +186,7 @@ When `auto` resolves to `sampled`:
   with reason `not_read_by_mode`; the integrated-power value is under
   `estimates.gpu` (`status: "estimated"`), and span totals that need GPU are
   `null`. Exclusive GPU energy of parents is not available.
-- **Measured GPU energy covers the whole run**, from a sampler (`aep run`
+- **Measured GPU energy covers the whole run**, from a sampler (`agent-energy-profiler run`
   or `Session(sampler=...)`) reading the counter at its first and last row.
   A `Session` without a sampler has no hardware timeline: spans then carry
   no GPU estimate either, until attributed against one. The report says so
@@ -223,8 +223,8 @@ When `auto` resolves to `sampled`:
 |---|---|
 | the 0.3.0 behaviour (per-span counter measurement) | `Session(path, mode="direct")` |
 | the conservative default | nothing, or `mode="auto"` explicitly |
-| `direct` where it is shown to be harmless | `Session(path, mode="auto", disturbance=CounterDisturbance.from_hardware_report("hw.json"))` after `aep validate --counter-disturbance --json hw.json` on that host |
-| `aep run`'s choice under `aep run`, your own otherwise | `Session.from_env(path, default_mode=...)` |
+| `direct` where it is shown to be harmless | `Session(path, mode="auto", disturbance=CounterDisturbance.from_hardware_report("hw.json"))` after `agent-energy-profiler validate --counter-disturbance --json hw.json` on that host |
+| `agent-energy-profiler run`'s choice under `agent-energy-profiler run`, your own otherwise | `Session.from_env(path, default_mode=...)` |
 
 `measurement.SessionDefaultModeWarning` still exists, so code that filters it
 keeps working, but it is never emitted; it will be removed in a later minor

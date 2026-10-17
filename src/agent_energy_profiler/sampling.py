@@ -86,7 +86,7 @@ def build_header():
 
 #: Counter policies (recorded in the sidecar as timeline.counter_policy):
 #:   every_row     read the cumulative energy counter on every row (the
-#:                 original behaviour, still the default of `aep sample`)
+#:                 original behaviour, still the default of `agent-energy-profiler sample`)
 #:   every_n_rows  read it on every n-th row and on the final row
 #:   boundaries    read it only on the first and the final row
 #: Power is read on every row in all policies. Milestone 4 found, on one
@@ -162,7 +162,7 @@ class Sampler:
 
 	A subprocess rather than a thread: the sampler then never competes for the
 	measured program's GIL, and it is the same tested code path as
-	`aep-sample`. start() returns once the first sample row is on disk, so a
+	`agent-energy-profiler-sample`. start() returns once the first sample row is on disk, so a
 	span opened afterwards lies inside the timeline. stop() waits for one
 	sample stamped after the stop request (so the last span is covered too),
 	then sends SIGTERM, which the sampler handles by finishing cleanly.

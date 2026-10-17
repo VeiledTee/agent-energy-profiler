@@ -188,7 +188,7 @@ class TestDefaultIsAuto(Base):
 		p = self.path()
 		with Session.from_env(p, gpu=CallableReader(Counter().read)) as s:
 			pass
-		# `aep run` checked the configuration in the parent; the child keeps it
+		# `agent-energy-profiler run` checked the configuration in the parent; the child keeps it
 		self.assertEqual((s.requested_mode, s.mode, s.mode_source),
 		                 ("auto", "direct", "aep_run"))
 

@@ -1,4 +1,4 @@
-"""`python -m agent_energy_profiler ...` is the same as the `aep` command."""
+"""`python -m agent_energy_profiler ...` is the same as the `agent-energy-profiler` command."""
 
 import sys
 

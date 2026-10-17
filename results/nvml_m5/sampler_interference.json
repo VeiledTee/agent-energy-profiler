@@ -39,7 +39,7 @@
     "platform": "Linux-5.15.167.4-microsoft-standard-WSL2-x86_64-with-glibc2.39",
     "python": "3.12.3",
     "wsl": true,
-    "pynvml_module": "/home/penguins/agent-energy-profiler/.venv/lib/python3.12/site-packages/pynvml.py",
+    "pynvml_module": ".venv/lib/python3.12/site-packages/pynvml.py",
     "nvidia_smi": "name, driver_version, power.draw [W], power.draw.average [W], power.draw.instant [W], power.limit [W], pstate\nNVIDIA GeForce RTX 4090, 610.88, 30.43 W, 30.43 W, 30.46 W, 450.00 W, P8"
   },
   "summary": {

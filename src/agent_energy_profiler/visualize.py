@@ -1521,8 +1521,8 @@ def write_rows(path, rows, fields):
 
 
 def save_figure(fig, out_dir, stem, png=True):
-	"""Write stem.pdf, and stem.png too unless png=False. Final thesis figures
-	pass png=False (PDF only, per CLAUDE.md's Generated Artifact Hygiene);
+	"""Write stem.pdf, and stem.png too unless png=False. Final publication
+	figures pass png=False (PDF only, so a figure has one canonical file);
 	diagnostic/intermediate figures keep the PNG+PDF default."""
 	pdf = os.path.join(out_dir, f"{stem}.pdf")
 	fig.savefig(pdf, bbox_inches="tight", metadata={"CreationDate": None, "ModDate": None})

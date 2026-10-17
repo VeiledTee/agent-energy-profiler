@@ -264,7 +264,7 @@ class Session:
 	            disturbance on this host. Recorded in the header; UNKNOWN if
 	            omitted, and never assumed to mean "not disturbed"
 	timeline    description of a hardware timeline run outside this session
-	            (as `aep run` does), recorded in the header
+	            (as `agent-energy-profiler run` does), recorded in the header
 	hooks       integrations observing spans (see "Hooks" above), e.g.
 	            agent_energy_profiler.otel.Correlation()
 	"""
@@ -310,33 +310,33 @@ class Session:
 		self.n_foreign_process_writes_refused = 0
 		self.sampler_exit_code = None
 
-	#: Environment variables set by `aep run` for the profiled program.
+	#: Environment variables set by `agent-energy-profiler run` for the profiled program.
 	ENV_SPANS_FILE = "AEP_SPANS_FILE"
 	ENV_RESOLUTION = "AEP_RESOLUTION"
 	ENV_GPU = "AEP_GPU"
 	ENV_ATTRIBUTES = "AEP_RUN_ATTRIBUTES"
-	#: JSON {"mode", "disturbance", "timeline"} set by `aep run` (Milestone 5)
+	#: JSON {"mode", "disturbance", "timeline"} set by `agent-energy-profiler run` (Milestone 5)
 	ENV_MEASUREMENT = "AEP_MEASUREMENT"
 
 	@classmethod
 	def from_env(cls, default_path=None, *, attributes=None, default_mode=None, **kwargs):
-		"""A Session configured by `aep run`, or by `default_path` when the
+		"""A Session configured by `agent-energy-profiler run`, or by `default_path` when the
 		program runs on its own.
 
 		Reads AEP_SPANS_FILE (output path), AEP_RESOLUTION (a Resolution as
 		JSON), AEP_GPU ("auto" or "off") and AEP_RUN_ATTRIBUTES (JSON object,
 		merged under `attributes`). Keyword arguments override the environment.
-		The sampler is not started here: under `aep run` it belongs to the
+		The sampler is not started here: under `agent-energy-profiler run` it belongs to the
 		parent process, which brackets the whole program with it.
 
 		`default_mode` (Milestone 6) is the mode to use when neither `mode=`
-		nor `aep run` gives one, i.e. when the program runs on its own; it is
+		nor `agent-energy-profiler run` gives one, i.e. when the program runs on its own; it is
 		recorded as the caller's choice. Without it, Session's own default
 		(auto since 0.4.0) applies.
 		"""
 		path = os.environ.get(cls.ENV_SPANS_FILE) or default_path
 		if not path:
-			raise RuntimeError(f"no output path: set {cls.ENV_SPANS_FILE} (as `aep run` "
+			raise RuntimeError(f"no output path: set {cls.ENV_SPANS_FILE} (as `agent-energy-profiler run` "
 			                   f"does) or pass default_path")
 		if "resolution" not in kwargs and os.environ.get(cls.ENV_RESOLUTION):
 			kwargs["resolution"] = m.Resolution.from_dict(
@@ -360,7 +360,7 @@ class Session:
 		merged.update(attributes or {})
 		session = cls(path, attributes=merged, **kwargs)
 		if meas and mode_from_env and session.mode == meas.get("mode"):
-			# keep how `aep run` chose the mode (e.g. "auto" and why)
+			# keep how `agent-energy-profiler run` chose the mode (e.g. "auto" and why)
 			session.requested_mode = meas.get("requested_mode", session.requested_mode)
 			session.mode_reason = meas.get("mode_reason", session.mode_reason)
 			session.mode_source = m.MODE_SOURCE_AEP_RUN
@@ -396,7 +396,7 @@ class Session:
 			if (self.requested_mode == m.MODE_AUTO and self.mode == m.MODE_DIRECT
 			        and self.mode_source != m.MODE_SOURCE_AEP_RUN):
 				# auto's direct choice holds only for the configuration the
-				# disturbance test ran on; `aep run` checked it in the parent
+				# disturbance test ran on; `agent-energy-profiler run` checked it in the parent
 				self._resolve_mode(m.current_configuration(self._reader))
 			if self.sampler is not None:
 				self.sampler.start()

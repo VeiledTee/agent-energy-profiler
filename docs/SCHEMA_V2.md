@@ -102,7 +102,7 @@ device yields a valid difference; otherwise it is `unavailable` or `invalid`.
 | Field | Meaning |
 |---|---|
 | `gpu_update_interval_s` | median NVML counter update interval, or null |
-| `basis` | `unknown`, `configured` (the caller supplied a number), `hardware_report` (taken from an `aep-validate --json` report), `probed` (measured by this session at start) |
+| `basis` | `unknown`, `configured` (the caller supplied a number), `hardware_report` (taken from an `agent-energy-profiler-validate --json` report), `probed` (measured by this session at start) |
 | `source` | free text: report path, or the caller's description |
 | `characterized_at_unix_s` | when it was measured, if known |
 | `updates_observed` | number of counter updates behind the median, if known |
@@ -262,7 +262,7 @@ without hooks write exactly the records of Milestone 5, plus `mode_source`.
 | `span` | `external_parent` | root spans only, when a hook supplied an external trace context at the span's start: `{system, trace_id, span_id, sampled?}`. The span's `trace_id` is then the external trace's. Absent otherwise |
 | `session_end` | `n_hook_errors` | hook calls that raised (never propagated to the workload); present when hooks were configured |
 
-`run.json` (`aep run`) gains `measurement.mode_source`: `default` when
+`run.json` (`agent-energy-profiler run`) gains `measurement.mode_source`: `default` when
 `--mode` was not given, else `caller`.
 
 `external_parent` refers to a span the profiler did not record. Accounting

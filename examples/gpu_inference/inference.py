@@ -19,8 +19,8 @@ work it launched. Without that, energy leaks into whichever span is open when
 the GPU actually runs the kernels.
 
     pip install torch            # a CUDA build for your driver
-    aep validate --json hw.json  # characterise the GPU counter once
-    aep run --resolution-report hw.json --out-dir runs/gpu -- \
+    agent-energy-profiler validate --json hw.json  # characterise the GPU counter once
+    agent-energy-profiler run --resolution-report hw.json --out-dir runs/gpu -- \
         python examples/gpu_inference/inference.py
 """
 
@@ -94,7 +94,7 @@ def main():
 	if device.type == "cuda":
 		attrs["gpu"] = torch.cuda.get_device_name(device)
 
-	# Under `aep run`, its measurement mode applies. On its own there is no
+	# Under `agent-energy-profiler run`, its measurement mode applies. On its own there is no
 	# sampler, so per-span counter reads (direct) are the only GPU measurement.
 	with Session.from_env(args.out, overwrite=True, default_mode="direct",
 	                      attributes=attrs) as session:

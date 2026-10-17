@@ -35,8 +35,8 @@ if [ -n "$extras" ]; then
 	spec="$wheel[$extras]"
 fi
 "${pip[@]}" install -q "$spec" "pytest>=8"
-# tests/ plus what some tests read beside it: examples/ (run under `aep
-# run`) and src/ (scanned as text by test_package_boundary). The package
+# tests/ plus what some tests read beside it: examples/ (run under
+# `agent-energy-profiler run`) and src/ (scanned as text by test_package_boundary). The package
 # itself is still imported from site-packages, which
 # test_golden_equivalence checks under AEP_TEST_INSTALLED=1.
 cp -r "$repo/tests" "$repo/examples" "$repo/src" "$work/"
@@ -48,5 +48,9 @@ import agent_energy_profiler as aep
 assert "site-packages" in aep.__file__, aep.__file__
 print("installed", aep.__version__, "from", aep.__file__)
 EOF
-"$work/venv/bin/aep" --version
+"$work/venv/bin/agent-energy-profiler" --version
+if [ -e "$work/venv/bin/aep" ]; then
+	echo "unexpected 'aep' command installed (renamed to agent-energy-profiler)" >&2
+	exit 1
+fi
 AEP_TEST_INSTALLED=1 "$work/venv/bin/python" -m pytest -q -p no:cacheprovider tests

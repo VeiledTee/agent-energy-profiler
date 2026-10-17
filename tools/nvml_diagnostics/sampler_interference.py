@@ -1,7 +1,7 @@
 """Does the M5 sampler configuration reduce counter interference? (M4 method)
 
 The same design as experiment.py, but what runs inside each 8 s window is a
-real `aep sample` process in one of these configurations:
+real `agent-energy-profiler sample` process in one of these configurations:
 
     no_sampler          nothing reads NVML inside the window
     legacy_10hz         --hz 10 (counter read on every row: the original default)

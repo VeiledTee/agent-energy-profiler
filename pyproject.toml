@@ -45,9 +45,9 @@ gpu = ["nvidia-ml-py>=12.535"]
 plot = ["matplotlib>=3.5"]
 # OpenTelemetry integration (agent_energy_profiler.otel): trace correlation
 # needs only the API; exporting spans needs the SDK. Imported only by
-# agent_energy_profiler.otel and `aep otel-export`.
+# agent_energy_profiler.otel and `agent-energy-profiler otel-export`.
 otel = ["opentelemetry-api>=1.20", "opentelemetry-sdk>=1.20"]
-# `aep otel-export --endpoint`: OTLP over HTTP.
+# `agent-energy-profiler otel-export --endpoint`: OTLP over HTTP.
 otlp = ["opentelemetry-api>=1.20", "opentelemetry-sdk>=1.20",
         "opentelemetry-exporter-otlp-proto-http>=1.20"]
 # Test runner only: the suite passes, skipping optional-dependency tests.
@@ -58,14 +58,24 @@ dev = ["pytest>=8"]
 test = ["pytest>=8", "matplotlib>=3.5", "numpy", "pandas",
         "opentelemetry-api>=1.20", "opentelemetry-sdk>=1.20"]
 
+[project.urls]
+Homepage = "https://github.com/VeiledTee/agent-energy-profiler"
+Source = "https://github.com/VeiledTee/agent-energy-profiler"
+Issues = "https://github.com/VeiledTee/agent-energy-profiler/issues"
+Changelog = "https://github.com/VeiledTee/agent-energy-profiler/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/VeiledTee/agent-energy-profiler#readme"
+
+# One command, named like the distribution. The single-purpose scripts below
+# predate it and share its prefix; `python -m agent_energy_profiler` is
+# equivalent to the main command.
 [project.scripts]
-aep = "agent_energy_profiler.cli:main"
-aep-sample = "agent_energy_profiler.sampling:main"
-aep-attribute = "agent_energy_profiler.attribution:main"
-aep-attribute-v2 = "agent_energy_profiler.attribution_v2:main"
-aep-validate = "agent_energy_profiler.validation:main"
-aep-aggregate = "agent_energy_profiler.aggregate:main"
-aep-visualize = "agent_energy_profiler.visualize:main"
+agent-energy-profiler = "agent_energy_profiler.cli:main"
+agent-energy-profiler-sample = "agent_energy_profiler.sampling:main"
+agent-energy-profiler-attribute = "agent_energy_profiler.attribution:main"
+agent-energy-profiler-attribute-v2 = "agent_energy_profiler.attribution_v2:main"
+agent-energy-profiler-validate = "agent_energy_profiler.validation:main"
+agent-energy-profiler-aggregate = "agent_energy_profiler.aggregate:main"
+agent-energy-profiler-visualize = "agent_energy_profiler.visualize:main"
 
 [tool.setuptools]
 package-dir = { "" = "src" }

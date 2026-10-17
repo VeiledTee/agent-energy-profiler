@@ -12,8 +12,8 @@ Each question is one trace:
 The operation labels are chosen by this program, which knows why each step
 runs. The profiler never infers them.
 
-    aep run --out-dir runs/agent -- python examples/agent_workflow/agent.py
-    aep run --out-dir runs/agent-par -- python examples/agent_workflow/agent.py --parallel
+    agent-energy-profiler run --out-dir runs/agent -- python examples/agent_workflow/agent.py
+    agent-energy-profiler run --out-dir runs/agent-par -- python examples/agent_workflow/agent.py --parallel
 
 --parallel answers questions concurrently with asyncio. The spans then overlap,
 and the report marks them `shared`: device energy cannot be split between
@@ -138,7 +138,7 @@ def main():
 	args = ap.parse_args()
 	index = BM25(CORPUS)
 
-	# Under `aep run`, its measurement mode applies. On its own there is no
+	# Under `agent-energy-profiler run`, its measurement mode applies. On its own there is no
 	# sampler, so per-span counter reads (direct) are the only GPU measurement.
 	with Session.from_env(args.out, overwrite=True, default_mode="direct",
 	                      attributes={"example": "agent_workflow",

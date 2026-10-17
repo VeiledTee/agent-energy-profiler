@@ -431,7 +431,7 @@ class TestAepRunModes(Tmp):
 		self.assertEqual(run["measurement"]["mode"], "sampled")
 		self.assertEqual(header["config"]["measurement"]["requested_mode"], "auto")
 		# M6: who chose. The example's own default_mode="direct" does not apply
-		# under aep run.
+		# under agent-energy-profiler run.
 		self.assertEqual(run["measurement"]["mode_source"], "default")
 		self.assertEqual(header["config"]["measurement"]["mode_source"], "aep_run")
 		self.assertEqual(header["config"]["measurement"]["mode"], "sampled")

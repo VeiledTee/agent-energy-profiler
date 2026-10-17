@@ -8,7 +8,7 @@ independently.
 
 | | |
 |---|---|
-| Source repository | `Chain-of-Relations-Emissions` (local, WSL path `/home/penguins/Chain-of-Relations-Emissions`) |
+| Source repository | `Chain-of-Relations-Emissions`, the author's PhD research repository (not distributed with this project; its commit ids below are for the record) |
 | Source branch | `c2-preliminary-interventions` |
 | Source commit | `08bbc96dad39b9d059e6e0797d87ec9955830934` (working tree clean at extraction) |
 | Source package | `agent_energy_profiler/` (itself extracted in-repo at commit `27253fa`, 2026-08-29) |
@@ -1115,6 +1115,80 @@ artifact, golden fixture or existing field meaning changed.
 physical hardware; the disturbance finding on a second GPU or driver; CI on
 a hosted runner; Windows and macOS.
 
+## Milestone 9: public release preparation and the `agent-energy-profiler` name
+
+Publication checklist and history audit: [RELEASING.md](RELEASING.md).
+No measurement, schema or API semantics changed; the version stays 0.4.0
+(unpublished).
+
+**Changes.**
+
+- **Command renamed** from `aep` to `agent-energy-profiler`, matching the
+  distribution and the repository. The single-purpose scripts are
+  `agent-energy-profiler-*`. The default run directory is
+  `agent-energy-profiler-runs/`. No alias: nothing with `aep` was ever
+  published, and `aep` is an unrelated PyPI project. `cli.PROG` holds the
+  name. Recorded and interface names keep `aep`: `mode_source: "aep_run"`,
+  `run.json`'s `aep_run_version`, the `AEP_*` environment variables, the
+  OpenTelemetry `aep.*` namespace and its span-id derivation. Milestone
+  sections above keep the name the command had at the time.
+- **Repository contents.** `CLAUDE.md` is untracked (kept locally,
+  ignored). In `results/`, the virtual environment's absolute path and the
+  host name were redacted, and three console logs were removed.
+  `results/README.md` was added. `tools/nvml_diagnostics/analyze.py`
+  reproduces `summary.json` and `summary.md` byte for byte before and after
+  the redaction. This document no longer gives the research repository's
+  local path.
+- **Publication metadata.** `[project.urls]` for
+  `github.com/VeiledTee/agent-energy-profiler`; `SECURITY.md` uses GitHub
+  private vulnerability reporting; the README states the limits first
+  (device scope, estimated per-operation values, no external meter, RAPL
+  not validated on hardware, disturbance shown on one configuration); the
+  agent example is a full walkthrough with recorded output; CI gained
+  timeouts, concurrency and a check of the installed command.
+- **Tests.** `tests/test_release.py`: the command and scripts carry the
+  distribution's name, the project URLs, private vulnerability reporting,
+  the README's statements of limits, and no current documentation using the
+  old command. `tests/test_cli.py`: `--version`, `--help` and the default run
+  directory. `tools/check_wheel.sh` fails if a wheel installs `aep`.
+
+**Audit.** Every blob in the history (258, `.gz` fixtures decompressed) was
+searched for credentials, tokens, keys, personal paths, host names, e-mail
+addresses and device identifiers. None of the first three were found. The
+history still holds the commit e-mail (deliberately), `CLAUDE.md`, and the
+unredacted `results/` values. Rewriting would change the commit ids cited
+in this document, so the history was not rewritten.
+
+**Validation on this machine (RTX 4090, WSL2, driver 610.88).**
+
+| Check | Result |
+|---|---|
+| Full suite, `.venv` (3.12) | 563 passed, 10 skipped |
+| Full suite, Python 3.9 / 3.10 / 3.11 / 3.12 / 3.13 / 3.14 | 560 / 562 / 562 / 563 / 563 / 562 passed, no failures |
+| v1 and v2 golden tests | passed; fixture files unchanged since `e1364cb` |
+| Frozen research runs | identical on 3.12, 3.9 and 3.14 |
+| Recorded spans vs M8 (`e1364cb`): nine `Session` cases (every explicit mode, `auto` with three verdicts, the implicit default), on 3.12, 3.9 and 3.14 | identical (81 records each) |
+| Report of the v2 golden run vs M8 | identical except the command named in one warning message |
+| LangGraph 1.2.15 venv | 64 passed |
+| Build | `twine check --strict` passed; wheel declares 5 project URLs and only `agent-energy-profiler*` scripts; sdist 177 files, no `results/`, no `CLAUDE.md` |
+| Clean wheel: minimal 3.9 / minimal 3.14 / `[test,gpu]` 3.13 / `[otlp]` 3.13 / `[otel]` 3.9 at OpenTelemetry 1.20.0 | 466 / 468 / 545 / 496 / 493 passed; no failures; no `aep` script |
+| `pip-audit` (`[test,gpu]`, `[otlp]`) | no known vulnerabilities (2026-10-17) |
+| Walkthrough, real GPU, default mode | `sampled`; run counter 52.2 J, per-span estimate 45.7 J, 5 of 6 answers correct; a second run 52.6 J / 45.4 J |
+| Walkthrough, minimal wheel 3.9, no GPU library | runs, reports and exports; every GPU value `n/a` (`no_counter`), no estimate claimed |
+| Tracked files | no personal paths, host name or user name |
+| PyPI / TestPyPI / GitHub | `agent-energy-profiler` free on both indexes; `VeiledTee/agent-energy-profiler` does not exist yet (2026-10-17) |
+| Thesis repository | clean, still at `08bbc96` |
+
+**Found, not changed.** `report.build` raises `TypeError` for an
+attributed spans file whose spans are flagged below resolution when the
+resolution is unknown. This happens when `spans_attributed.jsonl` is
+copied without its `session_summary.json`. Runs produced by the tools do
+not hit it, and M8 behaves the same. Left for a later fix.
+
+**Not established.** Accuracy of any value (no external meter); RAPL on
+physical hardware; the disturbance finding on a second GPU or driver; CI on
+a hosted runner; Windows and macOS.
+
 ## Remaining references to the research repository
 
 The research repository is not a dependency: no code imports it, no test
@@ -1149,3 +1223,4 @@ schema v1 and generic in role. Renaming them is a schema-v2 decision.
 | 0.2.0 + M6 (version not bumped) | Session hooks, `bind`, external trace parent; optional `otel` module and `aep otel-export`; `analyze()`; `mode_source` provenance and the `DIRECT_MODE_BY_DEFAULT` warning (Session's default mode unchanged); LangGraph guidance. No measured value or existing field meaning changed. | identical: v1 fixtures, frozen runs, and the v2 fixture |
 | 0.3.0 (M7) | `SessionDefaultModeWarning` for `Session()` without `mode=` (default still `direct`; `auto` planned for 0.4.0); 3.12 float summation on every supported Python (`_compat.sum`), which makes 3.9–3.11 and 3.14 reproduce the reference artifacts; release files, CI, wheel checks. No measured value on 3.12, no field meaning and no default changed. | identical: v1 fixtures and the v2 fixture on Python 3.9–3.14; frozen runs on 3.12 and 3.9 |
 | 0.4.0 (M8) | `Session()` defaults to `auto` (was `direct`); `auto` accepts a `NOT_DETECTED` verdict only for the tested host, driver and GPU models; `SessionDefaultModeWarning` no longer emitted; report wording fixed (no claim of measured GPU energy without a GPU, disturbance warnings only for counters that were read). Explicit modes unchanged; no stored artifact or field meaning changed. | identical: v1 fixtures and the v2 fixture on Python 3.9–3.14; frozen runs on 3.12, 3.9 and 3.14 |
+| 0.4.0 (M9) | Command renamed `aep` → `agent-energy-profiler` (scripts `agent-energy-profiler-*`, default run directory `agent-energy-profiler-runs/`); recorded values and interface names keep `aep`. Publication metadata, `results/` redaction, `CLAUDE.md` untracked. No measurement, schema or field meaning changed. | identical: v1 and v2 fixtures on Python 3.9–3.14; frozen runs on 3.12, 3.9 and 3.14; recorded spans identical to M8 |

@@ -383,7 +383,7 @@ def main(argv=None):
 	ap.add_argument("--power-meta", default="")
 	ap.add_argument("--out-dir", required=True)
 	ap.add_argument("--resolution-report", default="",
-	                help="aep-validate --json report; overrides the session's "
+	                help="agent-energy-profiler-validate --json report; overrides the session's "
 	                     "recorded resolution (needed for v1 input)")
 	ap.add_argument("--allow-uncovered", action="store_true",
 	                help="mark spans outside the timeline not_covered instead "
@@ -404,7 +404,7 @@ def main(argv=None):
 def attribute_run(spans, out_dir, power="", power_meta="", resolution_report="",
                   allow_uncovered=False):
 	"""Attribute a spans file into out_dir (spans_attributed.jsonl and
-	session_summary.json); returns the summary. What `aep attribute` runs.
+	session_summary.json); returns the summary. What `agent-energy-profiler attribute` runs.
 
 	Raises ValueError when spans fall outside the timeline (unless
 	allow_uncovered); nothing is written then.

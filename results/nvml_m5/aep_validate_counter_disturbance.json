@@ -2,7 +2,7 @@
   "schema": "hardware-report/1",
   "generated_at": 1792101232.8001688,
   "host": {
-    "hostname": "The-First",
+    "hostname": "redacted-host",
     "system": "Linux",
     "release": "5.15.167.4-microsoft-standard-WSL2",
     "machine": "x86_64",

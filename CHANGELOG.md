@@ -9,15 +9,34 @@ minor release ahead with a warning.
 
 ## 0.4.0 — unreleased
 
+The first public release. Versions 0.1.0–0.3.0 below were development
+milestones and were never published.
+
+### Changed: the command is `agent-energy-profiler`
+
+- The command-line entry point is `agent-energy-profiler` (it was `aep`), the
+  same name as the distribution and the GitHub repository. The single-purpose
+  scripts are `agent-energy-profiler-sample`, `-attribute`, `-attribute-v2`,
+  `-validate`, `-aggregate` and `-visualize` (they were `aep-*`).
+  `python -m agent_energy_profiler` is unchanged, as is the import name
+  `agent_energy_profiler`. No `aep` alias is installed: no release ever
+  shipped it, and `aep` is already the name of an unrelated PyPI project.
+- `agent-energy-profiler run` without `--out-dir` writes to
+  `agent-energy-profiler-runs/<timestamp>` (it was `aep-runs/`).
+- Unchanged, because recorded data and other code depend on them: the
+  `AEP_*` environment variables, the OpenTelemetry attribute namespace
+  `aep.*` and its span-id derivation, and the recorded value
+  `mode_source: "aep_run"` (and the `run.json` key `aep_run_version`).
+
 ### Changed: `Session`'s default mode is `auto`
 
 - **`Session()` without `mode=` now uses `auto`** (before: `direct`), as
-  `aep run` already did. Without a hardware report showing that counter
+  `agent-energy-profiler run` already did. Without a hardware report showing that counter
   reads are harmless on this configuration, `auto` resolves to `sampled`:
   **per-span GPU energy becomes an estimate** (`estimates.gpu`) instead of
   a counter measurement (`energy.gpu`), and measured GPU energy covers the
   whole run. `Session.from_env()` follows the same default when neither
-  `aep run`, `mode=` nor `default_mode=` chooses one.
+  `agent-energy-profiler run`, `mode=` nor `default_mode=` chooses one.
 - **Comparing with earlier results:** check each artifact's `mode`,
   `requested_mode` and `mode_source` (in the session header and on every
   report's `measurement` line) before comparing per-span GPU numbers.
@@ -59,6 +78,15 @@ minor release ahead with a warning.
 - New report keys: `totals.domains.*.missing_reasons`,
   `totals.estimated_gpu.{n_top_level, n_without_gpu_value,
   without_gpu_value_reasons, reason}`.
+
+### Project
+
+- Project URLs (GitHub `VeiledTee/agent-energy-profiler`), private
+  vulnerability reporting in `SECURITY.md`, an agent walkthrough
+  (`examples/agent_workflow/README.md`), and a README that states the
+  measurement's limits up front.
+- `results/` (raw counter-disturbance data) documented, with the
+  developer's host name and local paths redacted.
 
 ### Unchanged
 

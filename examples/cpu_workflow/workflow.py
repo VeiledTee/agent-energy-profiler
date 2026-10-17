@@ -9,12 +9,12 @@ Four stages of ordinary CPU work, each recorded as a span:
 
 Run under the profiler (recommended):
 
-    aep run --out-dir runs/cpu -- python examples/cpu_workflow/workflow.py
+    agent-energy-profiler run --out-dir runs/cpu -- python examples/cpu_workflow/workflow.py
 
 or on its own, then attribute and report:
 
     python examples/cpu_workflow/workflow.py --out cpu_spans.jsonl
-    aep report cpu_spans.jsonl
+    agent-energy-profiler report cpu_spans.jsonl
 
 Needs only the core package (no GPU, no network).
 """
@@ -40,13 +40,13 @@ def main():
 	ap = argparse.ArgumentParser(description=__doc__,
 	                             formatter_class=argparse.RawDescriptionHelpFormatter)
 	ap.add_argument("--out", default="cpu_spans.jsonl",
-	                help="spans file when not run under `aep run`")
+	                help="spans file when not run under `agent-energy-profiler run`")
 	ap.add_argument("--scale", type=float, default=1.0,
 	                help="work multiplier (1.0 is a few seconds)")
 	args = ap.parse_args()
 	n = int(1_000_000 * args.scale)
 
-	# Under `aep run`, its measurement mode applies. On its own there is no
+	# Under `agent-energy-profiler run`, its measurement mode applies. On its own there is no
 	# sampler, so per-span counter reads (direct) are the only GPU measurement.
 	with Session.from_env(args.out, overwrite=True, default_mode="direct",
 	                      attributes={"example": "cpu_workflow", "scale": args.scale}) as session:

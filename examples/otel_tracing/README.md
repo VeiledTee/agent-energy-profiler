@@ -17,13 +17,13 @@ GPU counter only at the first and final row). It records with
 counter is undisturbed. Then it attributes (`analyze`), prints the report and
 the combined trace tree, and writes every span as OpenTelemetry JSON lines.
 
-Under `aep run`, `aep run` owns the sampler and the mode. Export afterwards:
+Under `agent-energy-profiler run`, `agent-energy-profiler run` owns the sampler and the mode. Export afterwards:
 
 ```bash
-aep run --out-dir runs/otel -- python examples/otel_tracing/app.py
-aep otel-export runs/otel --out runs/otel/otel_spans.jsonl
+agent-energy-profiler run --out-dir runs/otel -- python examples/otel_tracing/app.py
+agent-energy-profiler otel-export runs/otel --out runs/otel/otel_spans.jsonl
 # or to a collector (needs the otlp extra):
-aep otel-export runs/otel --endpoint http://localhost:4318/v1/traces
+agent-energy-profiler otel-export runs/otel --endpoint http://localhost:4318/v1/traces
 ```
 
 ## What it shows
@@ -39,8 +39,8 @@ one trace per request (application spans + profiler spans):
   ...
 ```
 
-Under `aep run` the application's own spans stay in the program's
-in-memory exporter. `aep otel-export` then exports the 12 profiler spans,
+Under `agent-energy-profiler run` the application's own spans stay in the program's
+in-memory exporter. `agent-energy-profiler otel-export` then exports the 12 profiler spans,
 which still carry the application's trace ids through their roots'
 `external_parent`.
 
@@ -70,7 +70,7 @@ Full attribute list: [docs/OPENTELEMETRY.md](../../docs/OPENTELEMETRY.md).
 | join the application's trace | `Session(..., hooks=[Correlation()])` |
 | application spans nest under profiler spans | `Correlation(propagate=True)` |
 | tag all spans of a request without an extra span | `with session.bind(request_id=rid):` |
-| conservative mode when run on its own, `aep run`'s otherwise | `Session.from_env(path, default_mode="auto")` |
+| conservative mode when run on its own, `agent-energy-profiler run`'s otherwise | `Session.from_env(path, default_mode="auto")` |
 | attribute and report from Python | `rep = analyze(session); print(report.render_text(rep))` |
 | export into the application's pipeline | `export_spans(run_dir, exporter, resource=provider.resource)` |
 

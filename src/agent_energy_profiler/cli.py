@@ -1,18 +1,19 @@
-"""`aep`: one command for the whole workflow.
+"""`agent-energy-profiler`: one command for the whole workflow.
 
-    aep validate [--json hw.json]          what can this host measure?
-    aep run [options] -- python app.py     run a program under profiling
-    aep attribute <spans|events> --power power.csv --out-dir out/
-    aep report <run dir or file> [--format text|json|csv]
-    aep export <run dir or file> --out-dir exported/
-    aep otel-export <run dir or file> [--endpoint URL | --out spans.otel.jsonl]
-    aep sample --out power.csv             the sampler on its own
+    agent-energy-profiler validate [--json hw.json]       what can this host measure?
+    agent-energy-profiler run [options] -- python app.py  run a program under profiling
+    agent-energy-profiler attribute <spans|events> --power power.csv --out-dir out/
+    agent-energy-profiler report <run dir or file> [--format text|json|csv]
+    agent-energy-profiler export <run dir or file> --out-dir exported/
+    agent-energy-profiler otel-export <run dir or file> [--endpoint URL | --out FILE]
+    agent-energy-profiler sample --out power.csv          the sampler on its own
 
-What `aep run` can and cannot see
----------------------------------
-`aep run` measures the WHOLE program: it starts the hardware sampler, reads
-the GPU energy counter before and after, and records the program's start and
-end. That gives the program's total device energy and nothing finer.
+What `agent-energy-profiler run` can and cannot see
+---------------------------------------------------
+`agent-energy-profiler run` measures the WHOLE program: it starts the hardware
+sampler, reads the GPU energy counter before and after, and records the
+program's start and end. That gives the program's total device energy and
+nothing finer.
 
 Operation-level energy (which LLM call, which retrieval, which tool) exists
 only for spans the program records itself through the SDK:
@@ -22,8 +23,8 @@ only for spans the program records itself through the SDK:
         with session.span("llm:plan"):
             ...
 
-`aep run` tells such a program where to write (environment variables read by
-Session.from_env) and attributes the spans afterwards. It never inspects an
+`agent-energy-profiler run` tells such a program where to write (environment
+variables read by Session.from_env) and attributes the spans afterwards. It never inspects an
 uninstrumented process to guess what its operations were.
 """
 
@@ -37,6 +38,10 @@ import sys
 import time
 
 from . import __version__
+
+#: The command's name (console script `agent-energy-profiler`; also
+#: `python -m agent_energy_profiler`).
+PROG = "agent-energy-profiler"
 
 
 @contextlib.contextmanager
@@ -55,30 +60,30 @@ def _resolution(args):
 	if report:
 		return Resolution.from_hardware_report(report)
 	if getattr(args, "probe_resolution", False):
-		print("aep: probing the GPU counter update interval (~5 s)...", file=sys.stderr)
+		print(f"{PROG}: probing the GPU counter update interval (~5 s)...", file=sys.stderr)
 		return Resolution.probe()
 	return Resolution.unknown()
 
 
 # --------------------------------------------------------------------------
-# aep validate / sample
+# agent-energy-profiler validate / sample
 # --------------------------------------------------------------------------
 
 def cmd_validate(args, rest):
 	from . import validation
-	with _argv(["aep validate"] + rest):
+	with _argv([f"{PROG} validate"] + rest):
 		return validation.main()
 
 
 def cmd_sample(args, rest):
 	from . import sampling
-	with _argv(["aep sample"] + rest):
+	with _argv([f"{PROG} sample"] + rest):
 		sampling.main()
 	return 0
 
 
 # --------------------------------------------------------------------------
-# aep run
+# agent-energy-profiler run
 # --------------------------------------------------------------------------
 
 def _gpu_reading(reader):
@@ -97,16 +102,16 @@ def cmd_run(args, rest):
 
 	command = rest[1:] if rest and rest[0] == "--" else rest
 	if not command:
-		print("aep run: give the program after `--`, e.g. aep run -- python app.py",
+		print(f"{PROG} run: give the program after `--`, e.g. {PROG} run -- python app.py",
 		      file=sys.stderr)
 		return 2
-	out_dir = args.out_dir or os.path.join("aep-runs", time.strftime("%Y%m%d-%H%M%S"))
+	out_dir = args.out_dir or os.path.join(f"{PROG}-runs", time.strftime("%Y%m%d-%H%M%S"))
 	os.makedirs(out_dir, exist_ok=True)
 	spans_file = os.path.join(out_dir, "spans.jsonl")
 	power_file = os.path.join(out_dir, "power.csv")
 	for existing in (spans_file, power_file):
 		if os.path.exists(existing):
-			print(f"aep run: {existing} already exists; use a new --out-dir", file=sys.stderr)
+			print(f"{PROG} run: {existing} already exists; use a new --out-dir", file=sys.stderr)
 			return 2
 
 	resolution = _resolution(args)
@@ -133,7 +138,7 @@ def cmd_run(args, rest):
 	else:
 		from .sampling import timeline_meta
 		timeline = timeline_meta(args.power_hz, counter_hz)
-	print(f"aep run: measurement mode {mode} ({mode_reason})", file=sys.stderr)
+	print(f"{PROG} run: measurement mode {mode} ({mode_reason})", file=sys.stderr)
 	attributes = dict(kv.split("=", 1) for kv in args.attr)
 	env = dict(os.environ)
 	env.update({
@@ -199,7 +204,7 @@ def cmd_run(args, rest):
 	with open(os.path.join(out_dir, "run.json"), "w") as f:
 		json.dump(run, f, indent=2)
 
-	print(f"\naep run: exit code {proc.returncode}, {duration:.2f} s -> {out_dir}")
+	print(f"\n{PROG} run: exit code {proc.returncode}, {duration:.2f} s -> {out_dir}")
 	print(f"  whole program, GPU (in-band counter): "
 	      f"{_fmt_domain(gpu)}")
 	if run_counter:
@@ -217,7 +222,7 @@ def cmd_run(args, rest):
 	code = attribution_v2.main(["--spans", spans_file, "--out-dir", out_dir]
 	                           + (["--power", power_file] if sampler is not None else []))
 	if code != 0:
-		print("aep run: attribution failed; raw files are kept in " + out_dir, file=sys.stderr)
+		print(f"{PROG} run: attribution failed; raw files are kept in {out_dir}", file=sys.stderr)
 		return code
 	print()
 	print(report.render_text(report.build(out_dir)))
@@ -234,23 +239,23 @@ def _fmt_domain(d):
 
 
 # --------------------------------------------------------------------------
-# aep attribute / report / export
+# agent-energy-profiler attribute / report / export
 # --------------------------------------------------------------------------
 
 def cmd_attribute(args, rest):
 	from . import attribution, attribution_v2, report
 	schema, kind = report.classify(args.input)
 	if kind == "attributed":
-		print(f"aep attribute: {args.input} is already attributed", file=sys.stderr)
+		print(f"{PROG} attribute: {args.input} is already attributed", file=sys.stderr)
 		return 2
 	out_dir = args.out_dir or os.path.dirname(os.path.abspath(args.input))
 	if schema == 1 and args.schema != 2:
 		# The v1 pipeline, unchanged: the research artifacts' own path.
 		if not args.power:
-			print("aep attribute: schema-v1 attribution needs --power", file=sys.stderr)
+			print(f"{PROG} attribute: schema-v1 attribution needs --power", file=sys.stderr)
 			return 2
 		os.makedirs(out_dir, exist_ok=True)
-		with _argv(["aep attribute", "--events", args.input, "--power", args.power,
+		with _argv([f"{PROG} attribute", "--events", args.input, "--power", args.power,
 		            "--out", os.path.join(out_dir, "energy_summary.csv"),
 		            "--out-events", os.path.join(out_dir, "events_attributed.jsonl")]
 		           + (["--power-meta", args.power_meta] if args.power_meta else [])):
@@ -320,7 +325,7 @@ def cmd_export(args, rest):
 	path = report.locate(args.input)
 	schema, kind = report.classify(path)
 	if kind != "attributed":
-		print("aep export: attribute the run first (aep attribute)", file=sys.stderr)
+		print(f"{PROG} export: attribute the run first ({PROG} attribute)", file=sys.stderr)
 		return 2
 	os.makedirs(args.out_dir, exist_ok=True)
 	rep = report.build(path)
@@ -351,7 +356,7 @@ def cmd_otel_export(args, rest):
 		from opentelemetry.sdk.resources import Resource
 	except ImportError as e:
 		hint = "agent-energy-profiler[otel]"
-		print(f"aep otel-export: {e}" + ("" if hint in str(e) else f" (pip install '{hint}')"),
+		print(f"{PROG} otel-export: {e}" + ("" if hint in str(e) else f" (pip install '{hint}')"),
 		      file=sys.stderr)
 		return 2
 	from . import report
@@ -359,17 +364,17 @@ def cmd_otel_export(args, rest):
 		path = report.locate(args.input)
 		_, kind = report.classify(path)
 	except (OSError, ValueError) as e:
-		print(f"aep otel-export: {e}", file=sys.stderr)
+		print(f"{PROG} otel-export: {e}", file=sys.stderr)
 		return 2
 	if kind != "attributed":
-		print("aep otel-export: the input is not attributed, so only in-band GPU energy is "
-		      "exported (no CPU/DRAM, estimates, totals or accounting). Run `aep attribute` "
-		      "first for the full record.", file=sys.stderr)
+		print(f"{PROG} otel-export: the input is not attributed, so only in-band GPU energy "
+		      f"is exported (no CPU/DRAM, estimates, totals or accounting). Run `{PROG} "
+		      f"attribute` first for the full record.", file=sys.stderr)
 	if args.endpoint:
 		try:
 			from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 		except ImportError:
-			print("aep otel-export: --endpoint needs the OTLP exporter: "
+			print(f"{PROG} otel-export: --endpoint needs the OTLP exporter: "
 			      "pip install 'agent-energy-profiler[otlp]'", file=sys.stderr)
 			return 2
 		exporter = OTLPSpanExporter(endpoint=args.endpoint)
@@ -386,7 +391,7 @@ def cmd_otel_export(args, rest):
 		result = otel.export_spans(path, exporter, resource=resource)
 	finally:
 		exporter.shutdown()
-	print(f"aep otel-export: {result['n_spans']} spans -> {where} "
+	print(f"{PROG} otel-export: {result['n_spans']} spans -> {where} "
 	      f"({result['n_batches']} batches, {result['n_failed_batches']} failed"
 	      + (f", {result['n_skipped']} without a start time skipped" if result["n_skipped"]
 	         else "") + ")", file=sys.stderr)
@@ -397,11 +402,11 @@ def cmd_otel_export(args, rest):
 
 def build_parser():
 	ap = argparse.ArgumentParser(
-		prog="aep", description="Agent Energy Profiler: hardware-grounded energy "
+		prog=PROG, description="Agent Energy Profiler: hardware-grounded energy "
 		"profiling for instrumented Python programs.",
-		epilog="Operation-level energy requires SDK spans in the program; "
-		       "`aep run` alone measures the whole program. See `aep run --help`.")
-	ap.add_argument("--version", action="version", version=f"aep {__version__}")
+		epilog=f"Operation-level energy requires SDK spans in the program; "
+		       f"`{PROG} run` alone measures the whole program. See `{PROG} run --help`.")
+	ap.add_argument("--version", action="version", version=f"{PROG} {__version__}")
 	sub = ap.add_subparsers(dest="command", required=True)
 
 	p = sub.add_parser("validate", help="report what this host can measure "
@@ -418,15 +423,15 @@ def build_parser():
 	                   "GPU counter read around it. Whole-program energy is always "
 	                   "measured; per-operation energy only for spans the program records "
 	                   "with Session.from_env().")
-	p.add_argument("--out-dir", default="", help="default: aep-runs/<timestamp>")
+	p.add_argument("--out-dir", default="", help=f"default: {PROG}-runs/<timestamp>")
 	p.add_argument("--mode", choices=("auto", "direct", "sampled", "hybrid"), default=None,
 	               help="measurement mode (default auto: per-span GPU counter reads only "
 	                    "if a disturbance test from --hardware-report found no effect on "
 	                    "this host, driver and GPU; otherwise sampled). See "
 	                    "docs/MEASUREMENT_MODES.md")
 	p.add_argument("--hardware-report", default="",
-	               help="`aep validate --counter-disturbance --json` report: the GPU "
-	                    "counter interval and the counter-disturbance verdict")
+	               help=f"`{PROG} validate --counter-disturbance --json` report: the "
+	                    "GPU counter interval and the counter-disturbance verdict")
 	p.add_argument("--power-hz", "--hz", dest="power_hz", type=float, default=10.0,
 	               help="sampler row rate: averaged power (and RAPL) read on every row "
 	                    "(default 10)")
@@ -437,7 +442,7 @@ def build_parser():
 	               help="no CPU/DRAM timeline; GPU from in-band reads only")
 	p.add_argument("--gpu", choices=("auto", "off"), default="auto")
 	p.add_argument("--resolution-report", default="",
-	               help="aep validate --json report giving the GPU counter interval "
+	               help=f"`{PROG} validate --json` report giving the GPU counter interval "
 	                    "(--hardware-report also provides it)")
 	p.add_argument("--probe-resolution", action="store_true",
 	               help="measure the GPU counter interval before running (~5 s)")

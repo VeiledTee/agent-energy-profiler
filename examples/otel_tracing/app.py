@@ -23,10 +23,10 @@ Run on its own (starts its own sampler, attributes, reports and exports):
 
     python examples/otel_tracing/app.py --out-dir runs/otel
 
-or under `aep run`, then export the attributed run:
+or under `agent-energy-profiler run`, then export the attributed run:
 
-    aep run --out-dir runs/otel -- python examples/otel_tracing/app.py
-    aep otel-export runs/otel --out runs/otel/otel_spans.jsonl
+    agent-energy-profiler run --out-dir runs/otel -- python examples/otel_tracing/app.py
+    agent-energy-profiler otel-export runs/otel --out runs/otel/otel_spans.jsonl
 
 Needs the otel extra: pip install 'agent-energy-profiler[otel]'.
 """
@@ -143,8 +143,8 @@ def main():
 	      f"({session.mode_reason})")
 
 	if under_aep_run:
-		print("under `aep run`: it attributes and reports when this program exits; then "
-		      "export with `aep otel-export <run dir>`")
+		print("under `agent-energy-profiler run`: it attributes and reports when this program exits; then "
+		      "export with `agent-energy-profiler otel-export <run dir>`")
 		provider.shutdown()
 		return
 

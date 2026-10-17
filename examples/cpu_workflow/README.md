@@ -14,8 +14,8 @@ python -m venv .venv
 ## Run
 
 ```bash
-aep validate --counter-disturbance --json hw.json                        # once per machine
-aep run --hardware-report hw.json --out-dir runs/cpu -- \
+agent-energy-profiler validate --counter-disturbance --json hw.json                        # once per machine
+agent-energy-profiler run --hardware-report hw.json --out-dir runs/cpu -- \
     python examples/cpu_workflow/workflow.py
 ```
 
@@ -23,7 +23,7 @@ On its own (no sampler, GPU read in-band only):
 
 ```bash
 python examples/cpu_workflow/workflow.py --out cpu_spans.jsonl
-aep report cpu_spans.jsonl
+agent-energy-profiler report cpu_spans.jsonl
 ```
 
 `--scale 0.2` makes it faster, `--scale 5` slower.
@@ -70,7 +70,7 @@ WARNINGS
   is attributed to whatever span is open. It is not the cost of the CPU work.
 - **`cpu_package` is n/a** on WSL2, VMs and most containers: there is no RAPL
   interface. On bare-metal Linux with readable `/sys/class/powercap` it is
-  measured. `aep validate` tells you which applies.
+  measured. `agent-energy-profiler validate` tells you which applies.
 - **`io:serialize` reads 0 J** because it lasted 3.4 ms and the GPU counter
   updates every ~102 ms. That zero is quantisation, flagged below resolution,
   not "no energy".

@@ -100,7 +100,7 @@ Further observations:
   does not disturb the counter), counter ÷ integrated power is 0.979 ± 0.022
   (idle), 0.966 ± 0.012 (steady), 0.977 ± 0.023 (pulsed). The two internal
   instruments disagree by 2–4% even undisturbed.
-- **Quick check.** `aep validate --counter-disturbance` reproduced the effect
+- **Quick check.** `agent-energy-profiler validate --counter-disturbance` reproduced the effect
   in 30 s: DISTURBED, retained 0.893 (0.893, 0.889, 0.894).
 
 ## 4. The M3 contradiction (counter above integrated power)
@@ -173,7 +173,7 @@ Requires bare-metal Linux, other drivers, or an external reference:
 ## 8. Recommendations
 
 *Status (Milestone 5): 1–4 are implemented as opt-in measurement modes
-([MEASUREMENT_MODES.md](MEASUREMENT_MODES.md)); `aep run` now defaults to
+([MEASUREMENT_MODES.md](MEASUREMENT_MODES.md)); `agent-energy-profiler run` now defaults to
 `auto`. 5 and 6 stand. Section 9 is expanded in
 [HARDWARE_VALIDATION_PROTOCOL.md](HARDWARE_VALIDATION_PROTOCOL.md).*
 
@@ -183,7 +183,7 @@ Requires bare-metal Linux, other drivers, or an external reference:
 2. **Per-span counter reads only where spans are long.** On a disturbing host,
    in-band reads should be opt-in, or replaced by attribution from a sparsely
    read counter plus the power timeline, with the method recorded.
-3. **Run `aep validate --counter-disturbance` on every host** and record the
+3. **Run `agent-energy-profiler validate --counter-disturbance` on every host** and record the
    verdict in the session header; attach it to every report.
 4. **Treat integrated `GetPowerUsage` as an estimate with known lag**; never a
    reference for short windows.

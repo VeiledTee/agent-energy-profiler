@@ -21,8 +21,8 @@ Pick the PyTorch build that matches your driver (see pytorch.org). Check:
 ## Run
 
 ```bash
-aep validate --counter-disturbance --json hw.json
-aep run --hardware-report hw.json --out-dir runs/gpu -- \
+agent-energy-profiler validate --counter-disturbance --json hw.json
+agent-energy-profiler run --hardware-report hw.json --out-dir runs/gpu -- \
     python examples/gpu_inference/inference.py
 ```
 

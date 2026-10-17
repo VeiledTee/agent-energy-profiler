@@ -6,7 +6,7 @@ what a number means is high. Most of this file is about protecting that.
 ## Set up
 
 ```bash
-git clone <this repository> && cd agent-energy-profiler
+git clone https://github.com/VeiledTee/agent-energy-profiler && cd agent-energy-profiler
 python -m venv .venv
 .venv/bin/pip install -e '.[test]'          # add ,gpu on a machine with an NVIDIA GPU
 git config core.hooksPath scripts/git-hooks  # commit-message guard (see below)
@@ -50,7 +50,10 @@ wheel checks, and the LangGraph compatibility tests.
    repository has been checked against an external power meter yet.
 6. **Behaviour changes are announced first.** A changed default warns for one
    minor release before it changes (as `Session`'s mode did: announced in
-   0.3.0, changed in 0.4.0; see `docs/MEASUREMENT_MODES.md`).
+   0.3.0, changed in 0.4.0; see `docs/MEASUREMENT_MODES.md`). The one
+   exception so far is the command name: it was `aep` in development
+   versions that were never published, and it became
+   `agent-energy-profiler` before the first public release, with no alias.
 
 ## Pull requests
 
@@ -67,7 +70,10 @@ trailers; `scripts/git-hooks/commit-msg` rejects them.
 
 ## Reporting problems
 
-Bugs and questions: open an issue with the output of `aep validate` (or the
-file written by `aep validate --json hw.json`) and the profiler version
-(`aep --version`). Security
-issues: see [SECURITY.md](SECURITY.md).
+Bugs and questions: open an issue at
+<https://github.com/VeiledTee/agent-energy-profiler/issues> with the output
+of `agent-energy-profiler validate` (or the file written by
+`agent-energy-profiler validate --json hw.json`) and the profiler version
+(`agent-energy-profiler --version`). That output contains the host name;
+remove it if you prefer. Security issues: see [SECURITY.md](SECURITY.md),
+never a public issue.

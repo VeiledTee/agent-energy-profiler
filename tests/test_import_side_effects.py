@@ -119,7 +119,7 @@ class TestImportsTouchNoHardware(unittest.TestCase):
 					if n["rows"] >= 2:
 						os.kill(os.getpid(), signal.SIGINT)
 				time.sleep = fake_sleep
-				sys.argv = ["aep-sample", "--out", %r]
+				sys.argv = ["agent-energy-profiler-sample", "--out", %r]
 				s.main()
 				report()
 			""" % out)

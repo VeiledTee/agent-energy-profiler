@@ -5,11 +5,11 @@ traces. It is optional:
 
 ```bash
 pip install 'agent-energy-profiler[otel]'    # opentelemetry-api + -sdk
-pip install 'agent-energy-profiler[otlp]'    # + OTLP/HTTP exporter for `aep otel-export --endpoint`
+pip install 'agent-energy-profiler[otlp]'    # + OTLP/HTTP exporter for `agent-energy-profiler otel-export --endpoint`
 ```
 
 The core package never imports OpenTelemetry. Only an explicit
-`from agent_energy_profiler import otel` (or `aep otel-export`) does.
+`from agent_energy_profiler import otel` (or `agent-energy-profiler otel-export`) does.
 Without the extra, that import fails with an `ImportError` that names it.
 
 Tested with opentelemetry-api/-sdk 1.45.1 (current at the time of writing)
@@ -109,9 +109,9 @@ export_spans("run/", exporter, resource=provider.resource)
 Or from the command line:
 
 ```bash
-aep otel-export runs/x --endpoint http://localhost:4318/v1/traces   # OTLP/HTTP (otlp extra)
-aep otel-export runs/x --out runs/x/otel_spans.jsonl                # JSON lines, offline
-aep otel-export runs/x                                              # console
+agent-energy-profiler otel-export runs/x --endpoint http://localhost:4318/v1/traces   # OTLP/HTTP (otlp extra)
+agent-energy-profiler otel-export runs/x --out runs/x/otel_spans.jsonl                # JSON lines, offline
+agent-energy-profiler otel-export runs/x                                              # console
 ```
 
 - **Input:** a run directory or spans file: attributed, raw, schema v2 or v1.

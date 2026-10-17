@@ -1,4 +1,4 @@
-# agent-energy-profiler
+# Agent Energy Profiler
 
 Hardware-grounded, operation-level energy profiling for Python AI agents and
 other multi-step programs.
@@ -6,15 +6,34 @@ other multi-step programs.
 You mark the steps of your program as spans (`llm:plan`, `tool:search`,
 `verify:check`, …). The profiler reads hardware energy counters (NVIDIA NVML
 for GPUs, Linux RAPL for CPU package and DRAM) and reports how much energy
-the device used during each span, how long each step took, and how confident
-you can be in each number.
+the device used during each span and how long each step took. It also says
+how much each number can be trusted.
 
-> **Status: 0.4.0, beta, research-grade.** Extracted from a PhD research codebase
-> ([docs/PROVENANCE.md](docs/PROVENANCE.md)). Measurements are validated
-> against golden research artifacts, but read
-> [Known limitations](#known-limitations) before relying on GPU figures:
-> on the development host, reading the NVML energy counter frequently makes
-> it under-report.
+> **Status: 0.4.0, beta research software. Not yet on PyPI.** Read this
+> before relying on any number:
+>
+> - **GPU energy is measured at device scope.** NVML reports the whole GPU,
+>   including idle draw, other processes and concurrent work. A span's value
+>   is what the device used while the span was open, not what the span
+>   caused.
+> - **Per-operation values may be estimated.** In the default mode, per-span
+>   GPU energy is usually an estimate from averaged power, and only the whole
+>   run is a counter measurement. Estimates are labelled, reported
+>   separately, and never added to measured totals.
+> - **Accuracy has not been established against an independent meter.** No
+>   value has been compared with an external power meter.
+> - **RAPL (CPU package, DRAM) has not been validated on real hardware.** It
+>   is tested only with synthetic counters.
+> - **Counter disturbance has been demonstrated on one configuration.** On
+>   an RTX 4090 with driver 610.88 under WSL2, frequent reads of the NVML
+>   energy counter lowered what it reported. Other GPUs and drivers are
+>   untested. `agent-energy-profiler validate --counter-disturbance` checks
+>   yours.
+>
+> The attribution logic is regression-tested against reference artifacts
+> from the research runs it was extracted from
+> ([docs/PROVENANCE.md](docs/PROVENANCE.md)). That checks the computation is
+> reproduced exactly. It does not show the energy values are correct.
 
 ## What it measures, and what it does not
 
@@ -23,44 +42,57 @@ you can be in each number.
 | Whole-**device** energy from hardware counters: NVIDIA GPU (NVML), CPU package and DRAM (RAPL) | Energy of one process, thread or request on a shared device |
 | Energy over each span's time window, attributed by time | Which code inside a span used the energy |
 | Inclusive and exclusive (children removed) energy of nested spans | A split of energy between spans that ran at the same time |
-| Latency of every span; whole-program energy under `aep run` | What an uninstrumented program was doing internally |
+| Latency of every span; whole-program energy under `agent-energy-profiler run` | What an uninstrumented program was doing internally |
 | Integrated sampled power, as a labelled **estimate** | Storage, network, fans, PSU losses, facility overhead, carbon (unless you convert with your own grid intensity, `carbon.py`) |
 
 Energy is reported in joules. A missing measurement is `null`, never 0.
 
 ## Install
 
-Not on PyPI yet. From a clone or a built wheel:
+Not on PyPI yet. Install from GitHub or from a clone:
 
 ```bash
-python -m venv .venv
-.venv/bin/pip install /path/to/agent-energy-profiler          # core: no dependencies
-.venv/bin/pip install '/path/to/agent-energy-profiler[gpu]'   # + NVIDIA GPU counters (nvidia-ml-py)
-.venv/bin/pip install '/path/to/agent-energy-profiler[plot]'  # + figures (matplotlib)
-.venv/bin/pip install '/path/to/agent-energy-profiler[otel]'  # + OpenTelemetry correlation/export
-.venv/bin/pip install '/path/to/agent-energy-profiler[otlp]'  # + OTLP/HTTP for `aep otel-export --endpoint`
-.venv/bin/pip install -e '.[test]'                            # development: full test suite
+python -m venv .venv && . .venv/bin/activate
+pip install "agent-energy-profiler @ git+https://github.com/VeiledTee/agent-energy-profiler"
+# or, in a clone:
+pip install .              # core: no dependencies
+pip install '.[gpu]'       # + NVIDIA GPU counters (nvidia-ml-py)
+pip install '.[plot]'      # + figures (matplotlib)
+pip install '.[otel]'      # + OpenTelemetry correlation/export
+pip install '.[otlp]'      # + OTLP/HTTP for `agent-energy-profiler otel-export --endpoint`
+pip install -e '.[test]'   # development: full test suite
 ```
 
-Python 3.9 or later (CI: 3.9–3.14, Linux). The core has no dependencies.
+This installs the `agent-energy-profiler` command and the
+`agent_energy_profiler` Python package. `python -m agent_energy_profiler` is
+the same command.
 
-**Supported hardware.** Anything works; what gets measured depends on the
-host. `aep validate` tells you exactly.
+## Supported platforms
 
-| Host | GPU | CPU package / DRAM |
-|---|---|---|
-| Linux, bare metal, NVIDIA GPU (Volta or newer) | measured | measured if `/sys/class/powercap` (Intel or AMD RAPL) or `amd_energy` is readable |
-| WSL2 with an NVIDIA GPU | measured (see limitations) | not available (no RAPL in WSL2) |
-| VMs, most containers, shared HPC nodes | often available | usually not available |
-| No NVIDIA GPU | not available | as above |
-| macOS, Windows native | not supported | not supported |
+Python 3.9–3.14 on Linux. The core has no dependencies, and anything it
+cannot measure is reported as unavailable. `agent-energy-profiler validate`
+shows what a given host can measure.
 
-## Minimal example
+| Host | GPU energy | CPU package / DRAM | Tested |
+|---|---|---|---|
+| Linux, bare metal, NVIDIA GPU (Volta or newer) | NVML counter | RAPL, if `/sys/class/powercap` (Intel or AMD) or `amd_energy` is readable | no physical-hardware run yet; CI uses synthetic counters |
+| WSL2 with an NVIDIA GPU | NVML counter (see [Known limitations](#known-limitations)) | not available (WSL2 has no RAPL) | yes: RTX 4090, driver 610.88 (the development machine) |
+| VMs, most containers, shared HPC nodes | often available | usually not available | no |
+| Linux without an NVIDIA GPU | not available | as above | CI (Ubuntu, GitHub-hosted runners) |
+| macOS, native Windows | not supported | not supported | — |
+
+## Quick start
+
+A complete walkthrough with real output is in
+[examples/agent_workflow](examples/agent_workflow/). It covers install,
+instrumenting an agent, running, reporting, and measured versus estimated
+energy. In short:
 
 ```python
 from agent_energy_profiler import Session
 
-with Session.from_env("spans.jsonl", default_mode="auto") as session:  # `aep run` sets path and mode
+# under `agent-energy-profiler run`, the run sets the path and mode
+with Session.from_env("spans.jsonl", default_mode="auto") as session:
     with session.span("agent:question", attributes={"id": "q1"}):
         with session.span("retrieval:search"):
             docs = search(query)
@@ -70,19 +102,21 @@ with Session.from_env("spans.jsonl", default_mode="auto") as session:  # `aep ru
 ```
 
 ```bash
-aep validate --counter-disturbance --json hw.json          # once per machine (~40 s)
-aep run --hardware-report hw.json --out-dir runs/demo -- python my_agent.py
+agent-energy-profiler validate --counter-disturbance --json hw.json   # once per machine (~40 s)
+agent-energy-profiler run --hardware-report hw.json --out-dir runs/demo -- python my_agent.py
+agent-energy-profiler report runs/demo
 ```
 
-`aep run` starts the hardware sampler, runs the program, attributes its spans
-and prints a report. Four complete examples (CPU-only, GPU inference, an
-agent loop, an OpenTelemetry-traced service) are in [examples/](examples/).
+`agent-energy-profiler run` starts the hardware sampler, runs the program,
+attributes its spans and prints a report. Four examples are in
+[examples/](examples/): an agent loop, CPU-only work, GPU inference and an
+OpenTelemetry-traced service.
 
 ## Instrumenting an application
 
 | Need | Code |
 |---|---|
-| a session | `with Session("spans.jsonl", mode="auto") as session:` (or `Session.from_env(path, default_mode="auto")` to follow `aep run` when run under it) |
+| a session | `with Session("spans.jsonl", mode="auto") as session:` (or `Session.from_env(path, default_mode="auto")` to follow `agent-energy-profiler run` when run under it) |
 | a block | `with session.span("tool:search", attributes={...}) as s:` |
 | async code | `async with session.span("llm:plan"):` — tasks created inside inherit the parent |
 | a function | `@session.trace("tool:search")` on a sync or async function; the label is required |
@@ -113,8 +147,8 @@ function name, a prompt or the call stack.
 
 - **OpenTelemetry** (`[otel]` extra): root spans join the application's
   current trace. Optionally, application spans nest under profiler spans.
-  After attribution, `export_spans` / `aep otel-export` sends every span with
-  its energy as `aep.*` attributes to your exporter. Measured, estimated,
+  After attribution, `export_spans` / `agent-energy-profiler otel-export`
+  sends every span with its energy as `aep.*` attributes to your exporter. Measured, estimated,
   missing, shared and below-resolution values stay distinguishable. Global
   OpenTelemetry configuration is never touched. Details and the attribute
   list: [docs/OPENTELEMETRY.md](docs/OPENTELEMETRY.md).
@@ -133,10 +167,10 @@ host each read lowers what the counter reports
 | `direct` | measured: counter read at each span's boundaries | each span, and the run |
 | `sampled` | estimated from averaged power | the run (counter at the sampler's first and last row) |
 | `hybrid` | estimated from averaged power | the run, plus a 1 Hz measured counter series checked against the estimate |
-| `auto` | `direct` only if `aep validate --counter-disturbance` found no effect on this host, driver and GPU; otherwise `sampled` | |
+| `auto` | `direct` only if `agent-energy-profiler validate --counter-disturbance` found no effect on this host, driver and GPU; otherwise `sampled` | |
 
-**Since 0.4.0 both `aep run` and `Session` default to `auto`.** Without a
-hardware report showing that counter reads are harmless on this host,
+**Since 0.4.0 both `agent-energy-profiler run` and `Session` default to
+`auto`.** Without a hardware report showing that counter reads are harmless on this host,
 driver and GPU, that means `sampled`: per-span GPU energy is an **estimate**
 from averaged power, and the measured GPU figure covers the whole run.
 `Session` defaulted to `direct` (per-span counter measurement) before 0.4.0.
@@ -152,18 +186,29 @@ reads met an unknown or detected disturbance.
 
 | Command | Does |
 |---|---|
-| `aep validate [--json hw.json] [--counter-disturbance]` | probes NVML and RAPL, measures the GPU counter's update interval, says whether a complete gpu+cpu+dram total is possible here; with `--counter-disturbance` (~30 s) also tests whether reading the counter lowers what it reports |
-| `aep run [--mode M] [--hardware-report hw.json] [--power-hz N] [--counter-hz N] -- CMD` | runs CMD with the sampler on; writes `run.json` (whole-program energy, measurement mode); if the program records spans, attributes them and prints the report |
-| `aep attribute FILE --power power.csv` | joins spans (v2) or events (v1) with the hardware timeline |
-| `aep report DIR_OR_FILE [--format text\|json\|csv]` | readable or structured summary of a v1 or v2 run |
-| `aep export DIR_OR_FILE --out-dir D` | `spans.csv` (one row per span), `operations.csv`, `report.json` |
-| `aep otel-export DIR_OR_FILE [--endpoint URL \| --out FILE]` | spans as OpenTelemetry spans with energy attributes: OTLP/HTTP, JSON lines, or the console (`[otel]` / `[otlp]` extras) |
-| `aep sample --out power.csv [--hz N] [--counter-hz N]` | the sampler on its own (default: counter on every row, as before; `--counter-hz 0`: first and last row only) |
+| `agent-energy-profiler validate [--json hw.json] [--counter-disturbance]` | probes NVML and RAPL, measures the GPU counter's update interval, says whether a complete gpu+cpu+dram total is possible here; with `--counter-disturbance` (~30 s) also tests whether reading the counter lowers what it reports |
+| `agent-energy-profiler run [--mode M] [--hardware-report hw.json] [--power-hz N] [--counter-hz N] -- CMD` | runs CMD with the sampler on; writes `run.json` (whole-program energy, measurement mode); if the program records spans, attributes them and prints the report |
+| `agent-energy-profiler attribute FILE --power power.csv` | joins spans (v2) or events (v1) with the hardware timeline |
+| `agent-energy-profiler report DIR_OR_FILE [--format text\|json\|csv]` | readable or structured summary of a v1 or v2 run |
+| `agent-energy-profiler export DIR_OR_FILE --out-dir D` | `spans.csv` (one row per span), `operations.csv`, `report.json` |
+| `agent-energy-profiler otel-export DIR_OR_FILE [--endpoint URL \| --out FILE]` | spans as OpenTelemetry spans with energy attributes: OTLP/HTTP, JSON lines, or the console (`[otel]` / `[otlp]` extras) |
+| `agent-energy-profiler sample --out power.csv [--hz N] [--counter-hz N]` | the sampler on its own (default: counter on every row, as before; `--counter-hz 0`: first and last row only) |
 
-`python -m agent_energy_profiler …` is equivalent to `aep …`.
+`python -m agent_energy_profiler …` is equivalent to `agent-energy-profiler …`.
+The single-purpose scripts `agent-energy-profiler-sample`, `-attribute`,
+`-attribute-v2`, `-validate`, `-aggregate` and `-visualize` are also
+installed.
 
-**`aep run` does not look inside your program.** Without spans it reports
-only whole-program energy (`run.json`). Operation-level numbers exist only
+**Names.** The project is Agent Energy Profiler. The distribution and the
+command are `agent-energy-profiler`, and the import is `agent_energy_profiler`.
+The short prefix `aep` survives only in recorded data and interfaces that
+other code depends on: the `AEP_*` environment variables, the OpenTelemetry
+attribute namespace `aep.*`, and the recorded value `mode_source: "aep_run"`
+(a session configured by `agent-energy-profiler run`). These stay unchanged so
+that existing artifacts and dashboards keep their meaning.
+
+**`agent-energy-profiler run` does not look inside your program.** Without
+spans it reports only whole-program energy (`run.json`). Operation-level numbers exist only
 for the spans the program records through the SDK.
 
 ## Interpreting the numbers
@@ -198,22 +243,22 @@ extra wall time on the development host (two NVML reads; p90 ~8 ms), against
 0.01–0.05 ms without GPU reading. The reads lie outside the span's measured
 duration but lengthen the workload, and below ~20 ms per operation that
 overhead is a large fraction of the work. Use `gpu=False` (or
-`aep run --gpu off`) when you only need timings.
+`agent-energy-profiler run --gpu off`) when you only need timings.
 
 ## Schema compatibility
 
 | | Schema v1 (`events.jsonl`) | Schema v2 (`spans.jsonl`) |
 |---|---|---|
 | Written by | `profiler.span`, `profiler.configure` (legacy functional API) | `Session` |
-| Attributed by | `aep attribute` (v1 pipeline, unchanged, byte-identical to the research results) | `aep attribute` / `aep-attribute-v2` |
-| Report / export | `aep report`, `aep export` | `aep report`, `aep export` |
+| Attributed by | `agent-energy-profiler attribute` (v1 pipeline, unchanged, byte-identical to the research results) | `agent-energy-profiler attribute` / `agent-energy-profiler-attribute-v2` |
+| Report / export | `agent-energy-profiler report`, `agent-energy-profiler export` | `agent-energy-profiler report`, `agent-energy-profiler export` |
 | Hierarchy | none | trace, span and parent ids; exclusive energy |
 | Estimates | mixed into `gpu_energy_j` (marked by `gpu_energy_source`) | separate `estimates` |
 
 - v1 files stay readable by everything; v2 reads them by upgrading each event
   on the fly (the file is not changed). v1's power-integration values are then
   treated as estimates.
-- v1-only tools (`aep-aggregate`, `aep-visualize`, `trajectory`) do not read
+- v1-only tools (`agent-energy-profiler-aggregate`, `agent-energy-profiler-visualize`, `trajectory`) do not read
   v2.
 - Field definitions: [docs/SCHEMA_V2.md](docs/SCHEMA_V2.md). Migration table
   from the v1 API: [docs/SCHEMA_V2.md](docs/SCHEMA_V2.md#reading-v1-as-v2)
@@ -224,7 +269,7 @@ overhead is a large fraction of the work. Use `gpu=False` (or
 | `profiler.configure(events_file=..., run_id=...)` | `Session(path, attributes={"run_id": ...})` |
 | `profiler.span("llm:plan") as s; s["input_tokens"] = n` | `session.span("llm:plan") as s; s.set_tokens(input=n)` (`s["input_tokens"] = n` also works) |
 | `profiler.set_question(q)` | `attributes={"question_id": q}` or a parent span per question |
-| `aep-attribute` | `aep attribute` (detects the schema) |
+| `agent-energy-profiler-attribute` | `agent-energy-profiler attribute` (detects the schema) |
 
 ## Known limitations
 
@@ -233,7 +278,7 @@ overhead is a large fraction of the work. Use `gpu=False` (or
    field) removes ~10 ms of accumulation from it, for all readers: the 10 Hz
    sampler lowers the counter ~10–11%, and frequent span reads lower it
    further. Averaged-power and temperature reads do not. Check your host with
-   `aep validate --counter-disturbance`; where it reports DISTURBED, use
+   `agent-energy-profiler validate --counter-disturbance`; where it reports DISTURBED, use
    `sampled` or `hybrid` (what `auto` does) and treat GPU figures taken with
    frequent reads as **lower bounds**. With boundary-only counter reads the
    effect was no longer detectable on that host. Nothing here establishes
@@ -243,7 +288,7 @@ overhead is a large fraction of the work. Use `gpu=False` (or
    services on the same device are inside every number.
 3. **Counter resolution.** The NVML counter updates every ~100–107 ms (it
    varied by run and driver on one GPU); characterise it per host with
-   `aep validate`.
+   `agent-energy-profiler validate`.
 4. **CPU/DRAM untested on real hardware.** RAPL handling (wraparound,
    multi-socket) is tested synthetically only.
 5. **Asynchronous GPU work.** Synchronise (e.g. `torch.cuda.synchronize()`)
@@ -262,7 +307,8 @@ overhead is a large fraction of the work. Use `gpu=False` (or
 ```bash
 .venv/bin/pip install -e '.[test]'
 .venv/bin/python -m pytest
-# opt-in: re-attribute complete frozen research runs
+# opt-in: re-attribute complete frozen research runs (the research run data
+# is not distributed with this repository)
 AEP_FROZEN_RUNS_DIR=/path/to/runs .venv/bin/python -m pytest -m frozen_runs
 # opt-in: read the real NVML counter through Session
 AEP_REAL_GPU=1 .venv/bin/python -m pytest tests/test_session.py -k real_nvml
@@ -278,7 +324,11 @@ checks that a temporary directory is *not* a repository.
 - Public API and compatibility policy: [docs/API.md](docs/API.md),
   [CHANGELOG.md](CHANGELOG.md).
 - Contributing: [CONTRIBUTING.md](CONTRIBUTING.md). Security reports:
-  [SECURITY.md](SECURITY.md). Licence: MIT ([LICENSE](LICENSE)).
+  [SECURITY.md](SECURITY.md) (private vulnerability reporting). Licence: MIT
+  ([LICENSE](LICENSE)).
+- Raw diagnostic data behind the counter-disturbance finding:
+  [results/](results/README.md). Release process:
+  [docs/RELEASING.md](docs/RELEASING.md).
 
 ## Repository hygiene
 

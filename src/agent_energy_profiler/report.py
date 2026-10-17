@@ -416,7 +416,7 @@ def _warnings(acc, rep):
 	if n_gpu_measured and res.get("gpu_update_interval_s") is None:
 		_warn(w, "RESOLUTION_UNKNOWN", "The GPU counter's update interval was not "
 		      "characterised for this run, so short spans cannot be flagged as below "
-		      "resolution. Run `aep validate --json hw.json` and pass the report.")
+		      "resolution. Run `agent-energy-profiler validate --json hw.json` and pass the report.")
 	below = gpu_cov.get("measured_below_resolution", 0)
 	if below:
 		_warn(w, "BELOW_RESOLUTION", f"{below} of {n_gpu_measured} measured GPU values "
@@ -483,7 +483,7 @@ def _warnings(acc, rep):
 		      f"(per span and/or by the sampler) and counter disturbance on this host is "
 		      f"{verdict}. On at least one host, each read lowered the counter's reported "
 		      f"energy (docs/NVML_COUNTER_VALIDATION.md); measured GPU values may be biased "
-		      f"low. Test with `aep validate --counter-disturbance`.")
+		      f"low. Test with `agent-energy-profiler validate --counter-disturbance`.")
 	if frequent_reads and verdict == "DISTURBED":
 		_warn(w, "COUNTER_DISTURBED", "Counter disturbance was DETECTED on this host and the "
 		      "counter was read often during this run: measured GPU values are biased low "
@@ -646,7 +646,7 @@ def analyze(spans, power=None, out_dir=None, resolution_report=None, allow_uncov
 	`spans` is a closed Session or a raw spans file. A Session's own sampler
 	file is used as `power` unless one is given. Writes spans_attributed.jsonl
 	and session_summary.json to `out_dir` (default: beside the spans file),
-	exactly as `aep attribute` does, then builds the report from them.
+	exactly as `agent-energy-profiler attribute` does, then builds the report from them.
 	"""
 	from .session import Session
 	if isinstance(spans, Session):

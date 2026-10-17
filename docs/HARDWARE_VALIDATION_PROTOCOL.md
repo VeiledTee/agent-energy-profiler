@@ -53,13 +53,13 @@ accurate, and how a result passes or fails.
 
 For each host × GPU × driver:
 
-1. `aep validate --counter-disturbance --json hw-<host>-<driver>.json`.
+1. `agent-energy-profiler validate --counter-disturbance --json hw-<host>-<driver>.json`.
 2. `tools/nvml_diagnostics/experiment.py` for idle, steady and pulsed (12
    conditions, ≥ 4 blocks, seed recorded), with the external meter recording
    throughout.
 3. `tools/nvml_diagnostics/step_response.py` (≥ 5 steps).
 4. `tools/nvml_diagnostics/sampler_interference.py` (≥ 5 blocks).
-5. `aep run --mode direct|sampled|hybrid` on the GPU example and the agent
+5. `agent-energy-profiler run --mode direct|sampled|hybrid` on the GPU example and the agent
    example, ≥ 5 runs each, order randomised.
 6. Integrate the meter over every trial window (using the synchronised
    time base) and store it beside the trial in the raw results.
@@ -83,7 +83,7 @@ uncertainty before the campaign.
 |---|---|
 | C1 Undisturbed counter accuracy (Q1) | `E_ctr / E_ref` within ±3% (after any documented constant offset) on 8 s windows, all three workloads |
 | C2 No read disturbance at the modes' rates (Q2) | for `boundaries` and 1 Hz counter reads, retained ≥ 0.98 with a 95% CI that includes 1 |
-| C3 Counter disturbance verdict is correct | `aep validate --counter-disturbance` reports DISTURBED iff the experiment's 10 Hz energy condition retains < 0.95 |
+| C3 Counter disturbance verdict is correct | `agent-energy-profiler validate --counter-disturbance` reports DISTURBED iff the experiment's 10 Hz energy condition retains < 0.95 |
 | C4 Averaged-power estimate (Q3) | `E_pwr / E_ref` within ±5% in steady state; the step response's bias is reported, not judged |
 | C5 Modes (Q4) | `run_counter` of every mode within ±3% of `E_ref` over the same window; `direct` per-span sums within ±5% of `E_ref` for spans ≥ 1 s |
 

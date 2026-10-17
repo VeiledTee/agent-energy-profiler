@@ -6,3 +6,5 @@ dist/
 .venv/
 .pytest_cache/
 .mypy_cache/
+# Local assistant instructions: kept in each developer's working copy, not published.
+CLAUDE.md

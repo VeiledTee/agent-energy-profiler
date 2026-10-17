@@ -1,4 +1,8 @@
-"""M3: the `aep` command line (run, attribute, report, export)."""
+"""M3: the `agent-energy-profiler` command line (run, attribute, report, export).
+
+M9 renamed the command from `aep`; the tests run it as
+`python -m agent_energy_profiler`, which is the same entry point.
+"""
 
 import csv
 import gzip
@@ -29,7 +33,7 @@ FAKE_PYNVML = textwrap.dedent("""
 """)
 
 
-def aep(*args, env=None, cwd=None):
+def cli(*args, env=None, cwd=None):
 	return subprocess.run([sys.executable, "-m", "agent_energy_profiler", *args],
 	                      capture_output=True, text=True, env=env, cwd=cwd, timeout=300)
 
@@ -55,7 +59,7 @@ class TestRun(CliCase):
 
 	def test_instrumented_program_gets_spans_attribution_and_report(self):
 		out = os.path.join(self.d, "run")
-		res = aep("run", "--out-dir", out, "--hz", "50", "--attr", "purpose=test", "--",
+		res = cli("run", "--out-dir", out, "--hz", "50", "--attr", "purpose=test", "--",
 		          sys.executable, os.path.join(EXAMPLES, "agent_workflow", "agent.py"),
 		          "--work", "50", env=self.fake_env())
 		self.assertEqual(res.returncode, 0, res.stderr)
@@ -80,7 +84,7 @@ class TestRun(CliCase):
 		script = os.path.join(self.d, "plain.py")
 		with open(script, "w") as f:
 			f.write("print(sum(range(10**6)))\n")
-		res = aep("run", "--out-dir", out, "--hz", "50", "--", sys.executable, script,
+		res = cli("run", "--out-dir", out, "--hz", "50", "--", sys.executable, script,
 		          env=self.fake_env())
 		self.assertEqual(res.returncode, 0, res.stderr)
 		with open(os.path.join(out, "run.json")) as f:
@@ -92,7 +96,7 @@ class TestRun(CliCase):
 
 	def test_child_exit_code_is_propagated_and_gpu_off_works(self):
 		out = os.path.join(self.d, "run")
-		res = aep("run", "--out-dir", out, "--no-sampler", "--gpu", "off", "--",
+		res = cli("run", "--out-dir", out, "--no-sampler", "--gpu", "off", "--",
 		          sys.executable, "-c", "import sys; sys.exit(3)")
 		self.assertEqual(res.returncode, 3)
 		with open(os.path.join(out, "run.json")) as f:
@@ -104,11 +108,11 @@ class TestRun(CliCase):
 		out = os.path.join(self.d, "run")
 		os.makedirs(out)
 		open(os.path.join(out, "spans.jsonl"), "w").close()
-		res = aep("run", "--out-dir", out, "--no-sampler", "--", sys.executable, "-c", "pass")
+		res = cli("run", "--out-dir", out, "--no-sampler", "--", sys.executable, "-c", "pass")
 		self.assertEqual(res.returncode, 2)
 
 	def test_missing_command(self):
-		self.assertEqual(aep("run", "--out-dir", self.d).returncode, 2)
+		self.assertEqual(cli("run", "--out-dir", self.d).returncode, 2)
 
 
 class TestAttributeReportExport(CliCase):
@@ -121,7 +125,7 @@ class TestAttributeReportExport(CliCase):
 
 	def test_v1_attribute_reproduces_the_golden_fixture(self):
 		self.unpack("synthetic_rapl_multigpu", "input", ("events.jsonl", "power.csv"))
-		res = aep("attribute", os.path.join(self.d, "events.jsonl"),
+		res = cli("attribute", os.path.join(self.d, "events.jsonl"),
 		          "--power", os.path.join(self.d, "power.csv"), "--out-dir", self.d)
 		self.assertEqual(res.returncode, 0, res.stderr)
 		for name in ("events_attributed.jsonl", "energy_summary.csv",
@@ -134,24 +138,24 @@ class TestAttributeReportExport(CliCase):
 	def test_v1_report_formats(self):
 		self.unpack("synthetic_rapl_multigpu", "expected",
 		            ("events_attributed.jsonl", "energy_summary.csv", "trajectory_summary.json"))
-		text = aep("report", self.d)
+		text = cli("report", self.d)
 		self.assertEqual(text.returncode, 0, text.stderr)
 		self.assertIn("ESTIMATED ENERGY", text.stdout)
-		js = aep("report", self.d, "--format", "json")
+		js = cli("report", self.d, "--format", "json")
 		rep = json.loads(js.stdout)
 		self.assertEqual(rep["source"]["schema"], 1)
 		out = os.path.join(self.d, "ops.csv")
-		self.assertEqual(aep("report", self.d, "--format", "csv", "--out", out).returncode, 0)
+		self.assertEqual(cli("report", self.d, "--format", "csv", "--out", out).returncode, 0)
 		with open(out) as f:
 			self.assertEqual(len(list(csv.DictReader(f))), 4)
 
 	def test_export_v2(self):
 		self.unpack("synthetic_rapl_multigpu", "input", ("events.jsonl", "power.csv"))
-		res = aep("attribute", os.path.join(self.d, "events.jsonl"), "--schema", "2",
+		res = cli("attribute", os.path.join(self.d, "events.jsonl"), "--schema", "2",
 		          "--power", os.path.join(self.d, "power.csv"), "--out-dir", self.d)
 		self.assertEqual(res.returncode, 0, res.stderr)
 		out = os.path.join(self.d, "export")
-		res = aep("export", os.path.join(self.d, "spans_attributed.jsonl"), "--out-dir", out)
+		res = cli("export", os.path.join(self.d, "spans_attributed.jsonl"), "--out-dir", out)
 		self.assertEqual(res.returncode, 0, res.stderr)
 		with open(os.path.join(out, "spans.csv")) as f:
 			rows = list(csv.DictReader(f))
@@ -165,14 +169,26 @@ class TestAttributeReportExport(CliCase):
 
 	def test_export_refuses_raw_input(self):
 		self.unpack("synthetic_rapl_multigpu", "input", ("events.jsonl",))
-		res = aep("export", os.path.join(self.d, "events.jsonl"), "--out-dir", self.d)
+		res = cli("export", os.path.join(self.d, "events.jsonl"), "--out-dir", self.d)
 		self.assertEqual(res.returncode, 2)
 
 	def test_help_states_the_instrumentation_requirement(self):
-		res = aep("run", "--help")
+		res = cli("run", "--help")
 		self.assertIn("Session.from_env", res.stdout)
 		self.assertIn("Whole-program energy", res.stdout)
-		self.assertIn("aep", aep("--version").stdout)
+		self.assertEqual(cli("--version").stdout.split()[0], "agent-energy-profiler")
+
+	def test_command_is_named_after_the_distribution(self):
+		res = cli("--help")
+		self.assertTrue(res.stdout.startswith("usage: agent-energy-profiler "), res.stdout[:80])
+		self.assertNotIn("aep ", res.stdout)
+
+	def test_default_run_directory_is_named_after_the_command(self):
+		res = cli("run", "--no-sampler", "--gpu", "off", "--", sys.executable, "-c", "pass",
+		          cwd=self.d)
+		self.assertEqual(res.returncode, 0, res.stderr)
+		self.assertEqual(os.listdir(self.d), ["agent-energy-profiler-runs"])
+		self.assertIn("agent-energy-profiler run: measurement mode", res.stderr)
 
 
 if __name__ == "__main__":

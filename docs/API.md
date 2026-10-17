@@ -17,7 +17,7 @@ from agent_energy_profiler import Session
 | API | Notes |
 |---|---|
 | `Session(path, *, attributes=None, gpu="auto", resolution=None, sampler=None, overwrite=False, mode=None, disturbance=None, timeline=None, hooks=())` | context manager (`with`), or `start()` / `close()`. `mode=None` → `auto` since 0.4.0 (`direct` before; [MEASUREMENT_MODES.md](MEASUREMENT_MODES.md#sdk-default-mode-migration)). `mode` may change from `direct` to `sampled` at `start()` when an `auto` session's disturbance test came from another configuration |
-| `Session.from_env(default_path=None, *, attributes=None, default_mode=None, **kwargs)` | configured by `aep run` when run under it; otherwise `default_path` and `default_mode` (default: `Session`'s, `auto`) |
+| `Session.from_env(default_path=None, *, attributes=None, default_mode=None, **kwargs)` | configured by `agent-energy-profiler run` when run under it; otherwise `default_path` and `default_mode` (default: `Session`'s, `auto`) |
 | `session.span(name, *, attributes=None, parent=None, trace_id=None)` | sync or async context manager yielding a `SpanHandle`; `name` is the operation label and is required |
 | `session.trace(name, *, attributes=None)` | decorator for sync and async functions; the label is required |
 | `session.bind(**attributes)` | sync or async context manager: attributes added to every span opened inside |
@@ -46,7 +46,7 @@ the out-of-process hardware sampler, passed as `Session(sampler=...)`.
 | `analyze(spans, power=None, out_dir=None, resolution_report=None, allow_uncovered=False)` | a closed `Session` or a spans file → attributed run directory and the report dict |
 | `report.build(path, resolution=None)` | report dict of an attributed (or raw) v1/v2 run |
 | `report.render_text(rep, top=20)`, `report.operations_csv(rep)` | text report, per-operation CSV |
-| `attribution_v2.attribute_run(spans, out_dir, power="", power_meta="", resolution_report="", allow_uncovered=False)` | the `aep attribute` step for v2 |
+| `attribution_v2.attribute_run(spans, out_dir, power="", power_meta="", resolution_report="", allow_uncovered=False)` | the `agent-energy-profiler attribute` step for v2 |
 | `carbon.CarbonIntensity`, `carbon.convert(joules, intensity)` | explicit conversion with caller-supplied grid intensity |
 
 ## OpenTelemetry (`[otel]` extra)
@@ -59,10 +59,18 @@ Attribute names and meanings: [OPENTELEMETRY.md](OPENTELEMETRY.md).
 
 ## Command line
 
-`aep validate | run | attribute | report | export | otel-export | sample`
-(`aep --help`; equivalently `python -m agent_energy_profiler`). The older
-single-purpose scripts (`aep-sample`, `aep-attribute`, `aep-attribute-v2`,
-`aep-validate`, `aep-aggregate`, `aep-visualize`) remain.
+`agent-energy-profiler validate | run | attribute | report | export | otel-export | sample`
+(`agent-energy-profiler --help`; equivalently `python -m agent_energy_profiler`).
+The older single-purpose scripts remain under the same prefix:
+`agent-energy-profiler-sample`, `-attribute`, `-attribute-v2`, `-validate`,
+`-aggregate`, `-visualize`. Before 0.4.0 (unpublished) these were `aep` and
+`aep-*`.
+
+Interfaces that keep the short prefix `aep` and are covered by this policy:
+the environment variables `AEP_SPANS_FILE`, `AEP_RESOLUTION`, `AEP_GPU`,
+`AEP_RUN_ATTRIBUTES` and `AEP_MEASUREMENT` (set by `agent-energy-profiler
+run`, read by `Session.from_env`), the OpenTelemetry attribute namespace
+`aep.*`, and the recorded `mode_source` value `"aep_run"`.
 
 ## Legacy (schema v1)
 

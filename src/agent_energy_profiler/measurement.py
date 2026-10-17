@@ -85,7 +85,7 @@ class CounterDisturbance:
 	"""Whether reading the energy counter is known to lower what it reports.
 
 	verdict: DISTURBED, NOT_DETECTED, INCONCLUSIVE (from
-	`aep validate --counter-disturbance`), or UNKNOWN when no test result is
+	`agent-energy-profiler validate --counter-disturbance`), or UNKNOWN when no test result is
 	available. UNKNOWN never means "not disturbed".
 
 	`hostname`, `driver_version` and `gpu_models` describe the configuration
@@ -112,7 +112,7 @@ class CounterDisturbance:
 
 	@classmethod
 	def from_hardware_report(cls, report, source=None):
-		"""From an `aep validate --counter-disturbance --json` report."""
+		"""From an `agent-energy-profiler validate --counter-disturbance --json` report."""
 		if isinstance(report, str):
 			source = source or report
 			with open(report) as f:
@@ -220,12 +220,12 @@ def resolve_mode(requested, disturbance=None, current=None):
 
 
 #: Who chose the requested mode (Milestone 6): the caller passed it, the
-#: entry point's default applied, or `aep run` configured the session.
+#: entry point's default applied, or `agent-energy-profiler run` configured the session.
 MODE_SOURCE_CALLER = "caller"
 MODE_SOURCE_DEFAULT = "default"
 MODE_SOURCE_AEP_RUN = "aep_run"
 
-#: Session's default mode: `auto` since 0.4.0, as in `aep run` (`direct`
+#: Session's default mode: `auto` since 0.4.0, as in `agent-energy-profiler run` (`direct`
 #: before; docs/MEASUREMENT_MODES.md "SDK default mode migration").
 SESSION_DEFAULT_MODE = MODE_AUTO
 SESSION_DEFAULT_REASON = "default: Session's default mode (auto since 0.4.0)"
@@ -310,7 +310,7 @@ class Resolution:
 
 	@classmethod
 	def from_hardware_report(cls, report, source=None):
-		"""From an `aep-validate --json` report (a path or the loaded dict).
+		"""From an `agent-energy-profiler-validate --json` report (a path or the loaded dict).
 
 		Unknown when the report has no SUPPORTED gpu_counter_resolution.
 		"""

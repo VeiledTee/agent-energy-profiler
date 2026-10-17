@@ -68,7 +68,7 @@ class Counter:
 def write_timeline(path, t0, t1, mode, hz=10):
 	"""Synthetic power.csv + sidecar: 100 W GPU, RAPL package and DRAM. The
 	GPU counter is on every row for `direct`, at the boundaries for
-	`sampled`, every 5th row for `hybrid` (as `aep run` would configure)."""
+	`sampled`, every 5th row for `hybrid` (as `agent-energy-profiler run` would configure)."""
 	rows = int((t1 - t0) * hz) + 1
 	lines = ["t,gpu0_w,gpu0_energy_mj,rapl_package-0_intel-rapl:0_uj,rapl_dram_intel-rapl:0:2_uj"]
 	for i in range(rows):
