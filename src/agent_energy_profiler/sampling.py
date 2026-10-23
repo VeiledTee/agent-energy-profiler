@@ -33,6 +33,7 @@ Usage:
 import argparse
 import csv
 import json
+import os
 import signal
 import sys
 import time
@@ -168,10 +169,17 @@ class Sampler:
 	then sends SIGTERM, which the sampler handles by finishing cleanly.
 
 	Its stderr (hardware warnings) goes to <power_file>.sampler.log.
+
+	watch_parent: the sampler also stops by itself, writing its final row,
+	once the process that started it has exited (a killed notebook kernel, a
+	program that never closed its session). It checks its parent process id
+	on every row, so it notices within about one row period. Off by default;
+	Session.profile turns it on.
 	"""
 
 	def __init__(self, power_file, hz=10.0, python=None, env=None,
-	             startup_timeout_s=15.0, stop_timeout_s=10.0, counter_hz=None):
+	             startup_timeout_s=15.0, stop_timeout_s=10.0, counter_hz=None,
+	             watch_parent=False):
 		if not hz > 0:
 			raise ValueError("hz must be positive")
 		if counter_hz is not None and counter_hz < 0:
@@ -185,6 +193,7 @@ class Sampler:
 		self.env = env
 		self.startup_timeout_s = startup_timeout_s
 		self.stop_timeout_s = stop_timeout_s
+		self.watch_parent = bool(watch_parent)
 		self._proc = None
 		self._log = None
 		self.exit_code = None
@@ -236,12 +245,22 @@ class Sampler:
 		       "--out", self.power_file, "--hz", repr(self.hz)]
 		if self.counter_hz is not None:
 			cmd += ["--counter-hz", repr(self.counter_hz)]
+		if self.watch_parent:
+			cmd += ["--parent-pid", str(os.getpid())]
 		self._proc = subprocess.Popen(cmd, stdout=self._log, stderr=self._log, env=self.env)
 		if not self._wait_for(lambda: self._last_timestamp() is not None,
 		                      self.startup_timeout_s):
 			self.stop()
 			raise RuntimeError(f"sampler produced no samples; see "
 			                   f"{self.power_file}.sampler.log")
+		# Rows are stamped rounded to the millisecond, so the first stamp can
+		# lie up to 0.5 ms ahead of the clock. Return only once the clock has
+		# passed it: a span opened right after start() is then inside the
+		# timeline instead of just before it.
+		first = self._last_timestamp()
+		deadline = time.monotonic() + 1.0
+		while time.time() <= first and time.monotonic() < deadline:
+			time.sleep(0.0002)
 		return self
 
 	def stop(self):
@@ -281,8 +300,18 @@ def main():
 	ap.add_argument("--counter-hz", type=float, default=None,
 	                help="GPU energy-counter read rate; default: every row (the "
 	                     "original behaviour); 0: first and final row only")
+	ap.add_argument("--parent-pid", type=int, default=None,
+	                help="stop, after a final row, once this process is no longer "
+	                     "the sampler's parent (it exited)")
 	args = ap.parse_args()
 
+	parent_pid = args.parent_pid
+	if parent_pid is not None and os.getppid() != parent_pid:
+		# started through an intermediate process (or the parent is already
+		# gone): the parent id cannot tell us anything, so do not watch it
+		print(f"WARNING: --parent-pid {parent_pid} is not this process's parent "
+		      f"({os.getppid()}); not watching it", file=sys.stderr)
+		parent_pid = None
 	policy, every_n = counter_policy(args.hz, args.counter_hz)
 	period = 1.0 / args.hz
 	stop = {"flag": False}
@@ -308,6 +337,11 @@ def main():
 				f.flush()
 				i += 1
 				time.sleep(period)
+				if parent_pid is not None and os.getppid() != parent_pid:
+					# the parent exited; on Linux (and WSL2) the sampler has
+					# been re-parented to init or a subreaper
+					print("parent process exited; stopping", file=sys.stderr)
+					break
 			if policy != EVERY_ROW:
 				# a final counter reading closes the measured run window
 				w.writerow(sample_row(handles, zones, True))

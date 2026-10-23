@@ -19,11 +19,13 @@ agent-energy-profiler run --hardware-report hw.json --out-dir runs/cpu -- \
     python examples/cpu_workflow/workflow.py
 ```
 
-On its own (no sampler, GPU read in-band only):
+On its own, `Session.profile` starts the sampler itself and prints the
+report to stderr at the end; the files go to
+`agent-energy-profiler-runs/cpu_workflow-<timestamp>/` (or `--out-dir`), and
+there is no `run.json`:
 
 ```bash
-python examples/cpu_workflow/workflow.py --out cpu_spans.jsonl
-agent-energy-profiler report cpu_spans.jsonl
+python examples/cpu_workflow/workflow.py
 ```
 
 `--scale 0.2` makes it faster, `--scale 5` slower.

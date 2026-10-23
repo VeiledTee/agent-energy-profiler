@@ -57,7 +57,10 @@ your retrieval, model and tool calls the same way.
 Pure Python: no GPU, API key, model or network needed. `busy()` stands in for
 real work; replace it with your own retrieval, model and tool calls.
 
-    agent-energy-profiler run --out-dir runs/quickstart -- python quickstart.py
+    python quickstart.py
+
+The report is printed to stderr and saved, with the raw data, in
+agent-energy-profiler-runs/quickstart-<timestamp>/.
 """
 
 import time
@@ -72,7 +75,7 @@ def busy(seconds):
         pass
 
 
-with Session.from_env("quickstart_spans.jsonl", overwrite=True) as session:
+with Session.profile("quickstart") as session:
     for question in ("q1", "q2", "q3"):
         with session.span("agent:answer", attributes={"question": question}):
             with session.span("retrieval:search"):
@@ -82,32 +85,32 @@ with Session.from_env("quickstart_spans.jsonl", overwrite=True) as session:
                 span.set_tokens(input=120, output=40)
             with session.span("verify:check"):
                 busy(0.02)
-
-print(f"spans written to {session.path}")
 ```
 
 The same file is in the repository as
 [examples/quickstart.py](examples/quickstart.py).
 
-**3. Run it under the profiler:**
+**3. Run it:**
 
 ```bash
-agent-energy-profiler run --out-dir runs/quickstart -- python quickstart.py
+python quickstart.py
 ```
 
-`run` starts a hardware sampler, runs your program, attributes energy to its
-spans and prints a report. Everything is saved in `runs/quickstart/`.
+`Session.profile` starts a hardware sampler, records your spans, and when
+the `with` block ends attributes energy to them and prints a report to
+stderr (your program's stdout is left alone). Everything is saved in a new
+directory, `agent-energy-profiler-runs/quickstart-<timestamp>/`, named on
+the first line of output. Nothing is ever overwritten.
 
 **4. Look at the results again, or export them:**
 
 ```bash
-agent-energy-profiler report runs/quickstart                    # the text report
-agent-energy-profiler report runs/quickstart --format json      # every number, machine-readable
-agent-energy-profiler export runs/quickstart --out-dir runs/quickstart/export
+RUN=$(ls -d agent-energy-profiler-runs/quickstart-* | tail -n 1)   # the newest run
+agent-energy-profiler report "$RUN"                       # the text report
+agent-energy-profiler report "$RUN" --format json         # every number, machine-readable
+agent-energy-profiler export "$RUN" --out-dir "$RUN/export"
 #   -> spans.csv (one row per span), operations.csv, report.json
 ```
-
-Use a new `--out-dir` for each run; `run` never overwrites an earlier one.
 
 ## Example output
 
@@ -116,25 +119,23 @@ driver 610.88, WSL2, `[gpu]` extra, no hardware report). Abridged; your
 numbers will differ with your hardware and its load:
 
 ```
-agent-energy-profiler run: exit code 0, 1.18 s -> runs/quickstart
-  whole program, GPU (in-band counter): 43.433 J
-  sampler run counter, GPU (2 readings, 1.31 s): 46.821 J
+agent-energy-profiler: profiling into agent-energy-profiler-runs/quickstart-20261023-145119 (measurement mode sampled)
 
-measurement  mode sampled (requested auto, aep_run); per-span GPU counter reads off
+measurement  mode sampled (requested auto, default); per-span GPU counter reads off
 
 MEASURED ENERGY (hardware counters; basis: root spans)
   gpu                            n/a    3 of 3 top-level spans lack a measured value (not_read_by_mode x3)
 ESTIMATED ENERGY (spans with no GPU measurement; never added above)
-  gpu (power integration)    41.736 J over 3 of 3 top-level spans
+  gpu (power integration)    72.405 J over 3 of 3 top-level spans
 RUN COUNTER MEASUREMENT (sampler's GPU counter, its own first to last reading)
-  gpu 46.821 J over 1.31 s, 2 readings; brackets all spans: True
+  gpu 77.752 J over 1.22 s, 2 readings; brackets all spans: True
 
 BY OPERATION (energy: exclusive; top 4 by total time)
   operation                       n     total       p50       p95       gpu J   cpu_pkg J  est. gpu J
-  agent:answer                    3    1.11 s  370.2 ms  370.3 ms         n/a         n/a      41.736
-  llm:generate                    3  900.0 ms  300.0 ms  300.0 ms         n/a         n/a      33.835
-  retrieval:search                3  150.0 ms   50.0 ms   50.0 ms         n/a         n/a       5.621
-  verify:check                    3   60.0 ms   20.0 ms   20.0 ms         n/a         n/a       2.261
+  agent:answer                    3    1.11 s  370.4 ms  370.5 ms         n/a         n/a      72.405
+  llm:generate                    3  900.1 ms  300.0 ms  300.0 ms         n/a         n/a      58.645
+  retrieval:search                3  150.0 ms   50.0 ms   50.0 ms         n/a         n/a       9.773
+  verify:check                    3   60.0 ms   20.0 ms   20.0 ms         n/a         n/a       3.913
 
 WARNINGS
   [DEVICE_LEVEL] All energy is whole-device energy (every process on the GPU/CPU package), ...
@@ -148,7 +149,7 @@ How to read it:
   hardware energy counter between two readings. An *estimate* is sampled
   average power integrated over a span's time window. In the default mode,
   each span's GPU energy is an estimate (`est. gpu J`) and the measured GPU
-  figure is the whole-run counter (46.8 J). The two are reported separately
+  figure is the whole-run counter (77.8 J). The two are reported separately
   and never added together. [Choosing a measurement mode](#choosing-a-measurement-mode)
   explains when per-span values are measured instead.
 - **Per operation.** `BY OPERATION` gives each label's count, latency and
@@ -164,11 +165,11 @@ How to read it:
 
 **Without an NVIDIA GPU** (or without the `gpu` extra) the same commands
 work. Timings, the span tree and attributes are recorded, and every energy
-value is `n/a` with its reason (`no_counter`) instead of a zero. `run` says
-so before your program starts:
+value is `n/a` with its reason (`no_counter`) instead of a zero. The
+profiler says so before your code runs:
 
 ```
-agent-energy-profiler run: no GPU energy counter, so GPU values will be n/a. For an NVIDIA GPU, install the gpu extra: pip install 'agent-energy-profiler[gpu]'.
+agent-energy-profiler: no GPU energy counter, so GPU values will be n/a. For an NVIDIA GPU, install the gpu extra: pip install 'agent-energy-profiler[gpu]'.
 ```
 
 On Linux hosts with readable RAPL counters, CPU package and DRAM energy are
@@ -204,34 +205,56 @@ measured per span as well.
 
 ### Two ways to run
 
-| | `agent-energy-profiler run -- python app.py` | `Session(...)` inside Python |
+`Session.profile(name)` is the recommended entry point. The same script
+also runs under `agent-energy-profiler run` without changes:
+
+| | `python app.py` | `agent-energy-profiler run -- python app.py` |
 |---|---|---|
-| Use it when | you start the program from a shell | you cannot wrap the process: notebooks, tests, a server you start from code |
-| Hardware sampler | started for you | pass `sampler=Sampler(...)` |
-| Report | printed at the end; `report DIR` later | `analyze(session)` |
-| Whole-program energy (`run.json`) | yes | no |
+| Hardware sampler | started and stopped by `Session.profile` | started by `run`; `Session.profile` starts no second one |
+| Output | `agent-energy-profiler-runs/<name>-<timestamp>/` | `--out-dir`, or `agent-energy-profiler-runs/<timestamp>/` |
+| Report | when the `with` block ends: saved as `report.json` and `report.txt`, printed to stderr | printed by `run` at the end |
+| Whole-program energy (`run.json`) | no | yes, including interpreter start-up |
 
-`Session.from_env(path)`, as in the quick start, supports both: under
-`agent-energy-profiler run` it records into the run's directory with the
-run's settings; started on its own, it writes to `path`. **On its own it
-has no sampler**, so in the default mode it records timings but no energy.
-Use `run`, or the Python form below, to get energy.
+Use `run` when you start the program from a shell and also want
+whole-program energy. Use `python app.py` (or a notebook, a test, a server
+started from code) otherwise.
 
-Python only:
+### Getting the results in code
 
 ```python
-import os
-from agent_energy_profiler import Session, analyze, report
-from agent_energy_profiler.sampling import Sampler
+from agent_energy_profiler import Session
 
-os.makedirs("run", exist_ok=True)
-with Session("run/spans.jsonl", mode="auto",
-             sampler=Sampler("run/power.csv", hz=10, counter_hz=0)) as session:
-    with session.span("agent:request"):
+with Session.profile("rag-eval") as session:
+    with session.span("retrieval:search"):
         ...                                        # your code
-rep = analyze(session)                             # attributes run/, returns the report
-print(report.render_text(rep))
+session.out_dir          # the run directory
+session.report           # the report as a dict (report.json); None if it could not be built
+session.profile_status   # "complete"; "incomplete" (see session.profile_error); "no_spans"
 ```
+
+| Option | Use it when |
+|---|---|
+| `report=False` | you attribute later or elsewhere (`analyze(session)`, `agent-energy-profiler attribute`): batch jobs, services, CI that collects raw files |
+| `strict=True` | CI and research runs: closing raises if the sampler or attribution failed, unless your code itself raised |
+| `quiet=True` | nothing should be printed |
+| `mode=...`, `hardware_report="hw.json"` | see [Choosing a measurement mode](#choosing-a-measurement-mode) |
+| `out_dir="runs/x"` | a fixed directory; it is refused if it already holds a run or a report |
+
+**Close the session.** Use `with` (or `async with`). In a notebook, call
+`session = Session.profile("nb").start()` in one cell and
+`session.close()` in the last one; the report appears at `close()`. A
+session that is never closed is not attributed. Its sampler stops by itself
+when the Python process exits.
+
+If attribution fails, your program's own exception (if any) is never
+hidden: the raw files stay in the run directory, `profile_status` is
+`"incomplete"`, and the message names the command that retries it.
+
+**Lower-level API.** `Session(path, sampler=Sampler(...))` with
+`analyze(session)` gives full control over paths and the sampler
+([docs/API.md](docs/API.md)). `Session.from_env(path)` is for programs
+written only for `run`; on its own it starts no sampler, so in the default
+mode it records timings but no energy.
 
 ### Instrumenting
 
@@ -289,7 +312,10 @@ one machine every read lowered what the counter reported
   agent-energy-profiler run --hardware-report hw.json --out-dir runs/next -- python app.py
   ```
 
-- **Pass a mode explicitly** (`--mode`, or `Session(mode=...)`) when results
+  In Python: `Session.profile("next", hardware_report="hw.json")`.
+
+- **Pass a mode explicitly** (`--mode`, or `mode=...` to `Session.profile`
+  or `Session`) when results
   must be comparable across machines, since `auto` can choose differently
   on each. Code written for `Session` before 0.4.0 got `direct` by default;
   pass `mode="direct"` to keep that.
@@ -338,13 +364,15 @@ spans, timings, hierarchy, reports and exports. Run
 
 | Symptom | Cause | What to do |
 |---|---|---|
-| `run` prints "no GPU energy counter"; GPU values `n/a` (`no_counter`) | the `gpu` extra is missing, there is no NVIDIA GPU, or the GPU has no energy counter (older than Volta) | install the `gpu` extra; `agent-energy-profiler validate` shows which |
+| "no GPU energy counter"; GPU values `n/a` (`no_counter`) | the `gpu` extra is missing, there is no NVIDIA GPU, or the GPU has no energy counter (older than Volta) | install the `gpu` extra; `agent-energy-profiler validate` shows which |
 | CPU package and DRAM `n/a` (`no_counter`) | RAPL is not exposed (WSL2, most VMs and containers) or not readable by your user; on many Linux systems the counters are readable only by root | `agent-energy-profiler validate` lists readable zones |
-| Spans have timings but no energy, and no estimates | the program ran on its own, without a sampler | run it under `agent-energy-profiler run`, or pass `sampler=` ([Two ways to run](#two-ways-to-run)) |
+| Spans have timings but no energy, and no estimates | the program used `Session(...)` or `Session.from_env(...)` on its own, without a sampler | use `Session.profile(...)`, or run it under `agent-energy-profiler run` ([Two ways to run](#two-ways-to-run)) |
+| "profile incomplete: ... failed" | the sampler or attribution failed after your code ran; the raw files are kept | run the `attribute` and `report` commands the message names |
+| "spans fall outside the hardware timeline" | the sampler stopped early, or the system clock stepped during the run (seen a few times in several hundred short test runs under WSL2) | profile again; `agent-energy-profiler attribute ... --allow-uncovered` keeps the covered spans |
 | Per-span GPU `n/a` with reason `not_read_by_mode`, and an `est. gpu J` column | expected in `sampled` mode | see [Choosing a measurement mode](#choosing-a-measurement-mode) |
 | `RESOLUTION_UNKNOWN` warning | the GPU counter's update interval was not characterised | `agent-energy-profiler validate --json hw.json`, then `run --hardware-report hw.json` |
 | `0 J` or `BELOW_RESOLUTION` on short spans | the span is shorter than the counter's update interval (~100 ms on the development GPU) | profile longer operations, or read these values as quantised |
-| `run: ... already exists; use a new --out-dir` | `run` never overwrites a run | choose a new `--out-dir` |
+| `run: ... already exists; use a new --out-dir`, or `FileExistsError` from `Session.profile(out_dir=...)` | a run is never overwritten | choose a new directory, or leave `out_dir` out for a generated one |
 | `SUMMARY_MISSING` warning | `spans_attributed.jsonl` was copied without `session_summary.json` | report on the whole run directory |
 | `otel-export` reports a missing module | the OpenTelemetry extras are not installed | install `[otel]`, or `[otlp]` for `--endpoint` |
 
@@ -381,7 +409,9 @@ The profiler reports what the hardware counters report. In particular:
 - **Span overhead.** With per-span GPU reads (`direct`), each span adds
   about 2 ms of wall time on the development machine. Below ~20 ms per
   operation that is a large share of the work. Pass `gpu=False` (or
-  `run --gpu off`) when you only need timings.
+  `run --gpu off`) when you only need timings. `Session.profile` also
+  runs the sampler as a separate process: on the development machine,
+  starting it took about 50 ms and closing about 0.2 s, plus attribution.
 
 The attribution logic is regression-tested against reference artifacts
 from the research runs it was extracted from ([docs/PROVENANCE.md](docs/PROVENANCE.md)).

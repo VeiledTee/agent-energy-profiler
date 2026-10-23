@@ -19,7 +19,8 @@ SAME exporter, so a trace backend shows one tree with energy on the profiler
 spans. Nothing global is configured: the application owns its
 TracerProvider and the profiler only uses what it is handed.
 
-Run on its own (starts its own sampler, attributes, reports and exports):
+Run on its own (Session.profile starts the sampler and attributes the run when
+the session closes; this program then prints a short report and exports):
 
     python examples/otel_tracing/app.py --out-dir runs/otel
 
@@ -43,7 +44,7 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import SpanKind
 
-from agent_energy_profiler import Session, analyze, report
+from agent_energy_profiler import Session, report
 from agent_energy_profiler.otel import Correlation, JsonLinesSpanExporter, export_spans
 
 QUESTIONS = ["What is the capital of Australia?", "Which lake is the deepest?",
@@ -113,8 +114,9 @@ def print_tree(spans):
 def main():
 	ap = argparse.ArgumentParser(description=__doc__,
 	                             formatter_class=argparse.RawDescriptionHelpFormatter)
-	ap.add_argument("--out-dir", default="otel_run",
-	                help="where spans, power and exports go when run on its own")
+	ap.add_argument("--out-dir", default=None,
+	                help="where spans, power and exports go when run on its own (default: "
+	                     "a new agent-energy-profiler-runs/otel_tracing-<timestamp>/)")
 	ap.add_argument("--work", type=int, default=1_000_000,
 	                help="hashing iterations per llm:reason (controls its duration)")
 	args = ap.parse_args()
@@ -127,16 +129,13 @@ def main():
 	tracer = provider.get_tracer("qa-service")
 
 	# -- the profiler ------------------------------------------------------
-	sampler = None
-	if not under_aep_run:
-		from agent_energy_profiler.sampling import Sampler
-		os.makedirs(args.out_dir, exist_ok=True)
-		# power on every row, GPU counter only at the first and final row
-		sampler = Sampler(os.path.join(args.out_dir, "power.csv"), hz=10, counter_hz=0)
-	with Session.from_env(os.path.join(args.out_dir, "spans.jsonl"), overwrite=True,
-	                      default_mode="auto", sampler=sampler,
-	                      hooks=[Correlation(propagate=True)],
-	                      attributes={"example": "otel_tracing"}) as session:
+	# On its own: a sampler (power every row, GPU counter at the first and final
+	# row) and attribution when the session closes; quiet, because this program
+	# prints its own short report below. Under `agent-energy-profiler run`:
+	# run's sampler, mode and report.
+	with Session.profile("otel_tracing", out_dir=args.out_dir, quiet=True,
+	                     hooks=[Correlation(propagate=True)],
+	                     attributes={"example": "otel_tracing"}) as session:
 		for i, question in enumerate(QUESTIONS):
 			handle(tracer, session, f"req-{i}", question, args.work)
 	print(f"{len(QUESTIONS)} requests handled; profiler mode {session.mode} "
@@ -147,16 +146,17 @@ def main():
 		      "export with `agent-energy-profiler otel-export <run dir>`")
 		provider.shutdown()
 		return
+	if session.report is None:
+		raise SystemExit(f"profile {session.profile_status}: {session.profile_error}")
 
-	# -- after the run: attribute, report, export into the same pipeline --
-	rep = analyze(session)
-	print(report.render_text(rep, top=5))
-	result = export_spans(args.out_dir, memory, resource=provider.resource)
+	# -- after the run: report, export into the same pipeline -------------
+	print(report.render_text(session.report, top=5))
+	result = export_spans(session.out_dir, memory, resource=provider.resource)
 	print(f"\nexported {result['n_spans']} profiler spans into the application's exporter")
 	print("\none trace per request (application spans + profiler spans):")
 	print_tree(memory.get_finished_spans())
 
-	out = os.path.join(args.out_dir, "otel_spans.jsonl")
+	out = os.path.join(session.out_dir, "otel_spans.jsonl")
 	file_exporter = JsonLinesSpanExporter(out)
 	file_exporter.export(memory.get_finished_spans())
 	file_exporter.shutdown()

@@ -39,7 +39,7 @@ chooses:
 ```python
 from agent_energy_profiler import Session
 
-with Session.from_env("agent_spans.jsonl", overwrite=True, default_mode="direct") as session:
+with Session.profile("agent_workflow") as session:
     with session.span("agent:question", attributes={"question": question}) as q:
         with session.span("retrieval:search", attributes={"k": k}):
             evidence = index.search(question, k)
@@ -51,9 +51,13 @@ with Session.from_env("agent_spans.jsonl", overwrite=True, default_mode="direct"
         q.set_attribute("answer", result)
 ```
 
-`Session.from_env` follows `agent-energy-profiler run` when the program is
-started by it (output path and measurement mode). When the program runs on
-its own, it writes `agent_spans.jsonl` with `default_mode`.
+`Session.profile` works both ways. Run on its own
+(`python examples/agent_workflow/agent.py --work 100000`), it starts the
+hardware sampler, and when the session closes it attributes the spans,
+prints the report to stderr and saves everything in
+`agent-energy-profiler-runs/agent_workflow-<timestamp>/` (or `--out-dir`).
+Under `agent-energy-profiler run`, it records into `run`'s directory with
+`run`'s sampler and measurement mode, and `run` prints the report.
 
 ## 3. Run it under the profiler
 
@@ -89,8 +93,9 @@ agent-energy-profiler report runs/agent --format json         # every number, ma
 agent-energy-profiler export runs/agent --out-dir runs/agent/export   # spans.csv, operations.csv, report.json
 ```
 
-From Python, `analyze(session)` attributes a closed session and returns the
-same report dictionary (`report.render_text(...)` prints it).
+From Python, after a standalone run, `session.report` is the same report
+dictionary (`report.render_text(session.report)` prints it) and
+`session.out_dir` is the run directory.
 
 ## 5. Read measured and estimated energy
 

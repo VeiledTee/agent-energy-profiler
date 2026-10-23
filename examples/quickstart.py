@@ -3,7 +3,10 @@
 Pure Python: no GPU, API key, model or network needed. `busy()` stands in for
 real work; replace it with your own retrieval, model and tool calls.
 
-    agent-energy-profiler run --out-dir runs/quickstart -- python quickstart.py
+    python quickstart.py
+
+The report is printed to stderr and saved, with the raw data, in
+agent-energy-profiler-runs/quickstart-<timestamp>/.
 """
 
 import time
@@ -18,7 +21,7 @@ def busy(seconds):
 		pass
 
 
-with Session.from_env("quickstart_spans.jsonl", overwrite=True) as session:
+with Session.profile("quickstart") as session:
 	for question in ("q1", "q2", "q3"):
 		with session.span("agent:answer", attributes={"question": question}):
 			with session.span("retrieval:search"):
@@ -28,5 +31,3 @@ with Session.from_env("quickstart_spans.jsonl", overwrite=True) as session:
 				span.set_tokens(input=120, output=40)
 			with session.span("verify:check"):
 				busy(0.02)
-
-print(f"spans written to {session.path}")

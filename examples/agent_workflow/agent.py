@@ -12,8 +12,13 @@ Each question is one trace:
 The operation labels are chosen by this program, which knows why each step
 runs. The profiler never infers them.
 
+    python examples/agent_workflow/agent.py
     agent-energy-profiler run --out-dir runs/agent -- python examples/agent_workflow/agent.py
     agent-energy-profiler run --out-dir runs/agent-par -- python examples/agent_workflow/agent.py --parallel
+
+On its own, Session.profile runs the hardware sampler and prints the report to
+stderr when the session closes; under `agent-energy-profiler run`, run's
+sampler, mode and report are used instead.
 
 --parallel answers questions concurrently with asyncio. The spans then overlap,
 and the report marks them `shared`: device energy cannot be split between
@@ -130,7 +135,9 @@ async def answer_async(session, index, question, expected, work):
 def main():
 	ap = argparse.ArgumentParser(description=__doc__,
 	                             formatter_class=argparse.RawDescriptionHelpFormatter)
-	ap.add_argument("--out", default="agent_spans.jsonl")
+	ap.add_argument("--out-dir", default=None,
+	                help="run directory when run on its own (default: a new "
+	                     "agent-energy-profiler-runs/agent_workflow-<timestamp>/)")
 	ap.add_argument("--work", type=int, default=3000,
 	                help="reasoning repetitions per step (controls step duration)")
 	ap.add_argument("--parallel", action="store_true",
@@ -138,11 +145,11 @@ def main():
 	args = ap.parse_args()
 	index = BM25(CORPUS)
 
-	# Under `agent-energy-profiler run`, its measurement mode applies. On its own there is no
-	# sampler, so per-span counter reads (direct) are the only GPU measurement.
-	with Session.from_env(args.out, overwrite=True, default_mode="direct",
-	                      attributes={"example": "agent_workflow",
-	                                  "parallel": args.parallel}) as session:
+	# On its own: a sampler, the default (conservative) mode and a report at the
+	# end. Under `agent-energy-profiler run`: run's sampler, mode and report.
+	with Session.profile("agent_workflow", out_dir=args.out_dir,
+	                     attributes={"example": "agent_workflow",
+	                                 "parallel": args.parallel}) as session:
 		if args.parallel:
 			async def run_all():
 				async with session.span("agent:batch"):
@@ -153,7 +160,7 @@ def main():
 			results = [answer(session, index, q, e, args.work) for q, e in QUESTIONS]
 	correct = sum((r or "").lower() == e for r, (_, e) in zip(results, QUESTIONS))
 	print(f"answered {len(QUESTIONS)} questions, {correct} correct")
-	print(f"spans written to {session.path}")
+	print(f"run directory: {session.out_dir}")
 
 
 if __name__ == "__main__":

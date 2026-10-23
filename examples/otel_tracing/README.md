@@ -11,11 +11,14 @@ pip install '.[otel]'                       # from the repository root
 python examples/otel_tracing/app.py --out-dir runs/otel
 ```
 
-On its own, the program starts its own sampler (averaged power at 10 Hz;
-GPU counter only at the first and final row). It records with
-`default_mode="auto"`, which is `sampled` unless a hardware report says the
-counter is undisturbed. Then it attributes (`analyze`), prints the report and
-the combined trace tree, and writes every span as OpenTelemetry JSON lines.
+On its own, `Session.profile(..., hooks=[Correlation(propagate=True)])`
+starts the sampler (averaged power at 10 Hz; GPU counter only at the first
+and final row) and records in the default mode, `auto`, which is `sampled`
+unless a hardware report says the counter is undisturbed. When the session
+closes, it attributes the run (`quiet=True`, so nothing is printed then). The
+program then prints a short report from `session.report` and the combined
+trace tree, and writes every span as OpenTelemetry JSON lines. Without
+`--out-dir`, the files go to `agent-energy-profiler-runs/otel_tracing-<timestamp>/`.
 
 Under `agent-energy-profiler run`, `agent-energy-profiler run` owns the sampler and the mode. Export afterwards:
 
@@ -67,12 +70,12 @@ Full attribute list: [docs/OPENTELEMETRY.md](../../docs/OPENTELEMETRY.md).
 
 | Need | Code |
 |---|---|
-| join the application's trace | `Session(..., hooks=[Correlation()])` |
+| join the application's trace | `Session.profile(..., hooks=[Correlation()])` (also `Session(...)`) |
 | application spans nest under profiler spans | `Correlation(propagate=True)` |
 | tag all spans of a request without an extra span | `with session.bind(request_id=rid):` |
-| conservative mode when run on its own, `agent-energy-profiler run`'s otherwise | `Session.from_env(path, default_mode="auto")` |
-| attribute and report from Python | `rep = analyze(session); print(report.render_text(rep))` |
-| export into the application's pipeline | `export_spans(run_dir, exporter, resource=provider.resource)` |
+| own sampler and conservative mode when run on its own, `agent-energy-profiler run`'s otherwise | `Session.profile("otel_tracing", quiet=True, ...)` |
+| the report from Python | `print(report.render_text(session.report, top=5))` |
+| export into the application's pipeline | `export_spans(session.out_dir, exporter, resource=provider.resource)` |
 
 The application keeps its own `TracerProvider`. Nothing in the profiler
 sets OpenTelemetry's global provider or propagators.

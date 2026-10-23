@@ -94,6 +94,21 @@ class TestRun(CliCase):
 		self.assertFalse(os.path.exists(os.path.join(out, "spans_attributed.jsonl")))
 		self.assertEqual(run["whole_program"]["gpu_in_band"]["status"], "measured")
 
+	def test_a_session_without_spans_gets_whole_program_energy_only(self):
+		# used to attribute zero spans and then fail building the report
+		out = os.path.join(self.d, "run")
+		code = ("from agent_energy_profiler import Session\n"
+		        "with Session.from_env('unused.jsonl'):\n    pass\n")
+		res = cli("run", "--out-dir", out, "--hz", "50", "--", sys.executable, "-c", code,
+		          env=self.fake_env(), cwd=self.d)
+		self.assertEqual(res.returncode, 0, res.stderr)
+		self.assertIn("no operation-level data", res.stdout)
+		self.assertNotIn("Traceback", res.stderr)
+		with open(os.path.join(out, "run.json")) as f:
+			run = json.load(f)
+		self.assertEqual(run["whole_program"]["gpu_in_band"]["status"], "measured")
+		self.assertFalse(os.path.exists(os.path.join(out, "spans_attributed.jsonl")))
+
 	def test_child_exit_code_is_propagated_and_gpu_off_works(self):
 		out = os.path.join(self.d, "run")
 		res = cli("run", "--out-dir", out, "--no-sampler", "--gpu", "off", "--",

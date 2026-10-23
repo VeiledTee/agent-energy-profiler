@@ -13,6 +13,12 @@
         @session.trace("tool:search")
         async def search(q): ...
 
+For most programs, `Session.profile(name)` is the shorter form: it creates a
+run directory, starts the hardware sampler with the mode's counter policy,
+and attributes and reports the run when the session closes. Under
+`agent-energy-profiler run` it records into that run instead, without a
+second sampler (see Session.profile).
+
 A Session is an explicit object. There is no global default session: every
 span belongs to the session that created it, writes to that session's file,
 and finds its parent only among that session's open spans in the current
@@ -309,6 +315,12 @@ class Session:
 		self.n_spans_dropped = 0
 		self.n_foreign_process_writes_refused = 0
 		self.sampler_exit_code = None
+		#: Set by Session.profile only (None otherwise); see there.
+		self.out_dir = None
+		self.report = None
+		self.profile_status = None
+		self.profile_error = None
+		self._profile = None
 
 	#: Environment variables set by `agent-energy-profiler run` for the profiled program.
 	ENV_SPANS_FILE = "AEP_SPANS_FILE"
@@ -366,6 +378,94 @@ class Session:
 			session.mode_source = m.MODE_SOURCE_AEP_RUN
 		return session
 
+	#: Where Session.profile creates run directories (as `agent-energy-profiler run`).
+	PROFILE_RUNS_DIR = "agent-energy-profiler-runs"
+	#: Session.profile's sampler row rate (power and RAPL), as `run`'s default.
+	PROFILE_POWER_HZ = 10.0
+
+	@classmethod
+	def profile(cls, name=None, *, out_dir=None, mode=None, hardware_report=None,
+	            attributes=None, report=True, strict=False, quiet=False, **kwargs):
+		"""A Session that manages its own run directory, sampler and report.
+
+		    with Session.profile("my-run") as session:
+		        with session.span("llm:generate"):
+		            ...
+		    session.report          # the report dict; session.out_dir has the files
+
+		On its own, the session writes to `out_dir`, or to a new directory
+		agent-energy-profiler-runs/<name>-<YYYYmmdd-HHMMSS> (suffixed -2, -3,
+		... if taken), created when the session starts. An explicit `out_dir`
+		is never overwritten: one already holding any file a profile writes is
+		an error.
+		The hardware sampler runs from start to close at 10 Hz and reads the
+		GPU energy counter as `mode` prescribes (measurement.MODES
+		timeline_counter_hz: first and final row only, except hybrid), never
+		the sampler's every-row default. On close the run is attributed
+		(analyze) and the report is saved as report.json and report.txt,
+		stored in `session.report` and printed to stderr. Nothing is printed
+		to stdout.
+
+		Under `agent-energy-profiler run` (AEP_SPANS_FILE set) this is
+		Session.from_env: the run's directory, mode and sampler are used, no
+		sampler is started here, and `run` attributes and reports. `name`,
+		`out_dir`, `hardware_report` and `report` then have no effect.
+
+		mode             as Session; omitted: auto (sampled unless a hardware
+		                 report shows counter reads are harmless here)
+		hardware_report  an `agent-energy-profiler validate --json` file; sets
+		                 both the counter resolution and the disturbance verdict
+		report           False: stop after recording; attribute later with
+		                 analyze() or `agent-energy-profiler attribute`
+		strict           raise from close when stopping the sampler, attribution
+		                 or the report failed although the workload succeeded
+		quiet            print nothing to stderr
+		kwargs           other Session arguments (gpu, hooks); path, sampler,
+		                 overwrite, resolution, disturbance and timeline are
+		                 managed here
+
+		After close, `session.profile_status` is "complete", "incomplete"
+		(see `session.profile_error`; the raw files are kept), "recorded"
+		(report=False), "no_spans" (nothing to attribute; the whole-session
+		readings are printed, never assigned to an operation),
+		"recorded_for_run" (under `run`) or "failed_to_start".
+		A failure after the workload never hides the workload's own exception.
+		"""
+		managed = sorted(set(kwargs) & {"path", "sampler", "overwrite", "resolution",
+		                                "disturbance", "timeline"})
+		if managed:
+			raise TypeError(f"Session.profile() manages {', '.join(managed)}; "
+			                f"use Session(...) to set them yourself")
+		if os.environ.get(cls.ENV_SPANS_FILE):
+			session = cls.from_env(attributes=attributes, mode=mode, **kwargs)
+			session.out_dir = os.path.dirname(os.path.abspath(session.path))
+			session._profile = _Profile(None, explicit=False, report=False, strict=strict,
+			                            quiet=quiet, under_run=True)
+			session.profile_status = "created"
+			if hardware_report and not quiet:
+				print(f"agent-energy-profiler: hardware_report={hardware_report!r} is not "
+				      f"used under `agent-energy-profiler run`; pass --hardware-report "
+				      f"to run instead", file=sys.stderr)
+			return session
+		resolution = disturbance = None
+		if hardware_report:
+			resolution = m.Resolution.from_hardware_report(hardware_report)
+			disturbance = m.CounterDisturbance.from_hardware_report(hardware_report)
+		if out_dir:
+			directory, explicit = out_dir, True
+		else:
+			slug = "".join(c if c.isalnum() or c in "._-" else "-"
+			               for c in str(name or "run")).strip(".-") or "run"
+			directory = os.path.join(cls.PROFILE_RUNS_DIR,
+			                         f"{slug}-{time.strftime('%Y%m%d-%H%M%S')}")
+			explicit = False
+		session = cls(os.path.join(directory, "spans.jsonl"), attributes=attributes,
+		              mode=mode, resolution=resolution, disturbance=disturbance, **kwargs)
+		session._profile = _Profile(directory, explicit=explicit, report=report,
+		                            strict=strict, quiet=quiet)
+		session.profile_status = "created"
+		return session
+
 	def bind(self, **attributes):
 		"""Add `attributes` to every span of this session opened inside the
 		returned context manager (`with` or `async with`), in this task or
@@ -388,6 +488,8 @@ class Session:
 			return self
 		if self._closed:
 			raise RuntimeError("a closed Session cannot be restarted")
+		if self._profile is not None:
+			self._profile.prepare(self)
 		self._fh = open(self.path, "w" if self._overwrite else "x", buffering=1)
 		self._pid = os.getpid()
 		self._started = True
@@ -398,10 +500,14 @@ class Session:
 				# auto's direct choice holds only for the configuration the
 				# disturbance test ran on; `agent-energy-profiler run` checked it in the parent
 				self._resolve_mode(m.current_configuration(self._reader))
+			if self._profile is not None:
+				self._profile.started(self)
 			if self.sampler is not None:
 				self.sampler.start()
 			self._write(self._session_start_record())
 		except BaseException:
+			if self._profile is not None:
+				self._profile.start_failed = True
 			self.close()
 			raise
 		return self
@@ -409,8 +515,18 @@ class Session:
 	def close(self):
 		"""Stop the sampler, write session_end, close the file. Idempotent.
 
-		Spans still open are not written (their end is unknown).
+		Spans still open are not written (their end is unknown). A session
+		from Session.profile then attributes and reports the run.
 		"""
+		self._close(None)
+
+	def _close(self, exc):
+		if self._profile is not None:
+			self._profile.finish(self, exc)
+		else:
+			self._close_recording()
+
+	def _close_recording(self):
 		if self._closed or not self._started:
 			self._closed = True
 			return
@@ -452,14 +568,14 @@ class Session:
 		return self.start()
 
 	def __exit__(self, exc_type, exc, tb):
-		self.close()
+		self._close(exc)
 		return False
 
 	async def __aenter__(self):
 		return self.start()
 
 	async def __aexit__(self, exc_type, exc, tb):
-		self.close()
+		self._close(exc)
 		return False
 
 	# -- public span API ---------------------------------------------------
@@ -780,3 +896,181 @@ class Session:
 		except Exception:
 			self.n_spans_dropped += 1
 			return False
+
+
+def _say(text):
+	"""One message to stderr; a closed or broken stderr is not the workload's problem."""
+	try:
+		print(text, file=sys.stderr, flush=True)
+	except Exception:
+		pass
+
+
+class _Profile:
+	"""What Session.profile adds to a Session: the run directory, the sampler,
+	and attribution and reporting at close. Private; see Session.profile."""
+
+	#: Every file a profile writes into its directory. An explicit out_dir
+	#: holding any of them is refused, so no earlier result is overwritten.
+	FILES = ("spans.jsonl", "power.csv", "power.csv.meta.json", "power.csv.sampler.log",
+	         "spans_attributed.jsonl", "session_summary.json", "report.json", "report.txt")
+
+	def __init__(self, directory, *, explicit, report, strict, quiet, under_run=False):
+		self.directory = directory
+		self.explicit = explicit
+		self.report = report
+		self.strict = strict
+		self.quiet = quiet
+		self.under_run = under_run
+		self.start_failed = False
+
+	def prepare(self, session):
+		"""Create the run directory and the sampler, before the spans file opens."""
+		if self.under_run:
+			return
+		from .sampling import Sampler
+		directory = self.directory
+		if self.explicit:
+			os.makedirs(directory, exist_ok=True)
+			existing = [name for name in self.FILES
+			            if os.path.exists(os.path.join(directory, name))]
+			if existing:
+				raise FileExistsError(f"{directory} already holds {', '.join(existing)}; "
+				                      f"Session.profile never overwrites results: use a new "
+				                      f"out_dir, or leave it out for a generated one")
+		else:
+			base, n = directory, 2
+			while True:
+				try:
+					os.makedirs(directory)
+					break
+				except FileExistsError:
+					directory, n = f"{base}-{n}", n + 1
+		session.out_dir = directory
+		session.path = os.path.join(directory, "spans.jsonl")
+		# the mode's counter policy, never the sampler's every-row default; auto
+		# can still move from direct to sampled at start, and both read the
+		# counter at the first and final row only
+		session.sampler = Sampler(os.path.join(directory, "power.csv"),
+		                          hz=session.PROFILE_POWER_HZ,
+		                          counter_hz=m.MODES[session.mode]["timeline_counter_hz"],
+		                          watch_parent=True)
+		session.profile_status = "recording"
+
+	def started(self, session):
+		"""Say where the run goes, and why GPU energy will be missing if it will."""
+		if self.under_run:
+			session.profile_status = "recording"
+			return    # `run` has said both already
+		if self.quiet:
+			return
+		_say(f"agent-energy-profiler: profiling into {session.out_dir} "
+		     f"(measurement mode {session.mode})")
+		if session._reader is None and session._gpu_reason == "no_counter":
+			from .cli import _no_gpu_hint
+			_say(f"agent-energy-profiler: no GPU energy counter, so GPU values will be "
+			     f"n/a. {_no_gpu_hint()}")
+
+	def finish(self, session, exc):
+		"""Close the recording, then attribute and report. `exc` is the
+		workload's exception, if any: it always wins, so nothing here raises
+		while it propagates."""
+		if session._closed:
+			return
+		if session._started and os.getpid() != session._pid:
+			# a forked child: the sampler, the file and the report are the parent's
+			session._closed = True
+			return
+		errors = []
+		try:
+			session._close_recording()
+		except Exception as e:
+			errors.append(("stopping the recording", e))
+		if self.start_failed:
+			session.profile_status = "failed_to_start"
+			return
+		if not session._started:
+			return
+		if self.under_run:
+			session.profile_status = "recorded_for_run"
+			return
+		code = session.sampler_exit_code
+		if code not in (0, None):
+			errors.append(("the sampler", RuntimeError(
+				f"it exited with code {code}; see {session.sampler.power_file}.sampler.log")))
+		has_spans = session.n_spans_written > 0
+		if not has_spans and not self.quiet:
+			self._explain_no_spans(session)
+		if has_spans and self.report:
+			try:
+				self._report(session)
+			except Exception as e:
+				errors.append(("attribution and reporting", e))
+		if not errors:
+			session.profile_status = (("complete" if self.report else "recorded") if has_spans
+			                          else "no_spans")
+			return
+		session.profile_status = "incomplete"
+		session.profile_error = errors[0][1]
+		failed = "; ".join(f"{stage} failed ({type(e).__name__}: {e})" for stage, e in errors)
+		message = (f"agent-energy-profiler: profile incomplete: {failed}. The raw files are "
+		           f"kept in {session.out_dir}. To attribute and report them: "
+		           f"agent-energy-profiler attribute {session.path} --power "
+		           f"{session.sampler.power_file} && agent-energy-profiler report "
+		           f"{session.out_dir}")
+		if self.strict and exc is None:
+			raise RuntimeError(message) from errors[0][1]
+		if not self.quiet:
+			_say(message)
+
+	def _explain_no_spans(self, session):
+		"""No span means no operation-level data: say so, and give the
+		whole-session measurement the sampler made, as `run` does for a program
+		without spans. Nothing is attributed to an operation."""
+		dropped = session.n_spans_dropped
+		lines = [f"agent-energy-profiler: no spans were recorded"
+		         + (f" ({dropped} could not be written)" if dropped else "")
+		         + ", so there is no operation-level data. Wrap work in "
+		         "`session.span(label)` to measure it per operation."]
+		try:
+			lines += self._whole_session(session)
+		except Exception:
+			pass            # the explanation must not fail; power.csv is kept either way
+		lines.append(f"  hardware timeline: {session.sampler.power_file}")
+		_say("\n".join(lines))
+
+	@staticmethod
+	def _whole_session(session):
+		"""Lines with the sampler's whole-session readings (device-level)."""
+		from . import attribution_v2
+		from .cli import _fmt_domain
+		with open(session.path) as f:
+			records = [json.loads(line) for line in f if line.strip()]
+		start, end = records[0]["started_unix_s"], records[-1]["ended_unix_s"]
+		timeline = attribution_v2.Timeline(session.sampler.power_file)
+		lines = [f"  whole session, {end - start:.2f} s (device-level: everything on the "
+		         f"devices, not split by operation):"]
+		if timeline.timeline_meta is not None:
+			counter = timeline.run_counter(start, end)
+			if counter:
+				span = (f", {counter['duration_s']:.2f} s" if counter.get("duration_s")
+				        is not None else "")
+				lines.append(f"    GPU, sampler run counter ({counter['n_readings']} "
+				             f"readings{span}): {_fmt_domain(counter)}")
+		window = attribution_v2._window_from_bounds(start, end, timeline, session.resolution)
+		for domain, value in ((window or {}).get("domains") or {}).items():
+			lines.append(f"    {domain}, sampled counter: {_fmt_domain(value)}")
+		return lines
+
+	def _report(self, session):
+		from . import report as _report
+		rep = _report.analyze(session)
+		session.report = rep
+		text = _report.render_text(rep)
+		with open(os.path.join(session.out_dir, "report.json"), "w") as f:
+			json.dump(rep, f, indent=2)
+			f.write("\n")
+		with open(os.path.join(session.out_dir, "report.txt"), "w") as f:
+			f.write(text + "\n")
+		if not self.quiet:
+			_say("\n" + text)

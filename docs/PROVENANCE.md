@@ -1258,6 +1258,47 @@ quoted example output is from an earlier run of the same script with the
 repository's `.venv` on the same GPU; the fresh install gave the same
 report structure with values within 1% (estimate 41.468 J vs 41.736 J).
 
+**`Session.profile()`.** A new entry point that composes existing parts:
+a `Session`, a `Sampler` whose counter policy comes from the mode table
+(`MODES[mode]["timeline_counter_hz"]`, as `agent-energy-profiler run`
+uses), and `analyze()` at close. No measurement semantics changed: the
+session header, span records, attribution and report are what
+`Session(path, sampler=Sampler(..., counter_hz=0))` plus `analyze()`
+produced before, and no recorded key was added (`watch_parent` is not
+recorded). Two sampler changes, neither affecting a recorded value:
+`--parent-pid` / `watch_parent` (off by default), and `Sampler.start()`
+returning only once the clock has passed the first row's millisecond stamp,
+so a span opened immediately afterwards is not before the timeline.
+While testing, a few of several hundred very short runs under WSL2 were
+refused by attribution as uncovered. In each the wall clock had stepped
+back by 0.3–0.4 s during the run: the sampler's final row was stamped
+before its first. Attribution's refusal is correct, and `Session.profile`
+reports these runs as incomplete. Tests: `tests/test_profile.py` (38, with
+the follow-up below).
+Validation: full suite 601 passed, 10 skipped (`.venv`, 3.12); 598 / 600
+passed on 3.9 / 3.14; LangGraph venv 554 passed; golden tests 16 passed, 2
+skipped; frozen runs 1 passed, 1 skipped; golden fixtures and `results/`
+unchanged. The quick start ran as `python quickstart.py` with the `.venv`
+(RTX 4090) and in a clean core-only install (`build/profile-clean`).
+Overhead on the development machine (WSL2, 16 threads, median of 15):
+`start()` 52.6 ms with NVML (20.8 ms without; a plain `Session` 0.8 ms);
+`close()` 216 ms with `report=False` and 220 ms with the report for 12 spans.
+Most of `close()` is waiting for the sampler's row after the stop request,
+then its final row. Follow-up:
+- The five examples moved to `Session.profile`. On their own they now record
+  in `auto` with a sampler, where they used to record `direct` without one.
+  The GPU figures quoted in the cpu_workflow and gpu_inference READMEs are
+  from the earlier configuration, as `examples/README.md` already says.
+- A zero-span profile prints the sampler's whole-session readings with the
+  functions `run` uses (`Timeline.run_counter`, `_window_from_bounds`) and
+  attributes nothing.
+- `run` no longer fails on a session without spans (it reports whole-program
+  energy only).
+
+No recorded field or attributed value changed. Validation: full suite 611
+passed, 10 skipped (3.12); 608 / 610 on 3.9 / 3.14; LangGraph venv 564; golden
+tests and frozen runs as above; fixtures and `results/` unchanged.
+
 ## Remaining references to the research repository
 
 The research repository is not a dependency: no code imports it, no test

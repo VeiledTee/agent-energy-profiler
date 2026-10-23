@@ -7,14 +7,13 @@ Four stages of ordinary CPU work, each recorded as a span:
     compute:primes  sieve primes
     io:serialize    JSON-encode and compress the results
 
-Run under the profiler (recommended):
+Run it on its own (the report is printed to stderr at the end):
+
+    python examples/cpu_workflow/workflow.py
+
+or under the profiler, which also records whole-program energy:
 
     agent-energy-profiler run --out-dir runs/cpu -- python examples/cpu_workflow/workflow.py
-
-or on its own, then attribute and report:
-
-    python examples/cpu_workflow/workflow.py --out cpu_spans.jsonl
-    agent-energy-profiler report cpu_spans.jsonl
 
 Needs only the core package (no GPU, no network).
 """
@@ -39,17 +38,18 @@ def sieve(limit):
 def main():
 	ap = argparse.ArgumentParser(description=__doc__,
 	                             formatter_class=argparse.RawDescriptionHelpFormatter)
-	ap.add_argument("--out", default="cpu_spans.jsonl",
-	                help="spans file when not run under `agent-energy-profiler run`")
+	ap.add_argument("--out-dir", default=None,
+	                help="run directory when run on its own (default: a new "
+	                     "agent-energy-profiler-runs/cpu_workflow-<timestamp>/)")
 	ap.add_argument("--scale", type=float, default=1.0,
 	                help="work multiplier (1.0 is a few seconds)")
 	args = ap.parse_args()
 	n = int(1_000_000 * args.scale)
 
-	# Under `agent-energy-profiler run`, its measurement mode applies. On its own there is no
-	# sampler, so per-span counter reads (direct) are the only GPU measurement.
-	with Session.from_env(args.out, overwrite=True, default_mode="direct",
-	                      attributes={"example": "cpu_workflow", "scale": args.scale}) as session:
+	# On its own: a sampler, the default (conservative) mode and a report at the
+	# end. Under `agent-energy-profiler run`: run's sampler, mode and report.
+	with Session.profile("cpu_workflow", out_dir=args.out_dir,
+	                     attributes={"example": "cpu_workflow", "scale": args.scale}) as session:
 		with session.span("pipeline:run"):
 			with session.span("data:generate") as s:
 				rng = random.Random(42)
@@ -65,7 +65,7 @@ def main():
 				                     .encode(), 6)
 				s.set_attribute("bytes", len(blob))
 	print(f"done: {n} items sorted, {len(primes)} primes, {len(blob)} bytes compressed")
-	print(f"spans written to {session.path}")
+	print(f"run directory: {session.out_dir}")
 
 
 if __name__ == "__main__":

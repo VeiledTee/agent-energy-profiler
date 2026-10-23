@@ -26,6 +26,13 @@ agent-energy-profiler run --hardware-report hw.json --out-dir runs/gpu -- \
     python examples/gpu_inference/inference.py
 ```
 
+Or on its own, with the same measurement (`Session.profile` starts the
+sampler and prints the report to stderr at the end; no `run.json`):
+
+```bash
+python examples/gpu_inference/inference.py --hardware-report hw.json
+```
+
 Options: `--prompts 8 --new-tokens 64 --layers 12 --width 1024`,
 `--hf-model distilgpt2`, `--device cpu`.
 

@@ -19,8 +19,10 @@ work it launched. Without that, energy leaks into whichever span is open when
 the GPU actually runs the kernels.
 
     pip install torch            # a CUDA build for your driver
-    agent-energy-profiler validate --json hw.json  # characterise the GPU counter once
-    agent-energy-profiler run --resolution-report hw.json --out-dir runs/gpu -- \
+    agent-energy-profiler validate --counter-disturbance --json hw.json  # once per machine
+    python examples/gpu_inference/inference.py --hardware-report hw.json
+    # or, to also record whole-program energy:
+    agent-energy-profiler run --hardware-report hw.json --out-dir runs/gpu -- \
         python examples/gpu_inference/inference.py
 """
 
@@ -64,7 +66,12 @@ def generate_synthetic(torch, model, prompt_len, new_tokens, vocab, device, seed
 def main():
 	ap = argparse.ArgumentParser(description=__doc__,
 	                             formatter_class=argparse.RawDescriptionHelpFormatter)
-	ap.add_argument("--out", default="gpu_spans.jsonl")
+	ap.add_argument("--out-dir", default=None,
+	                help="run directory when run on its own (default: a new "
+	                     "agent-energy-profiler-runs/gpu_inference-<timestamp>/)")
+	ap.add_argument("--hardware-report", default=None,
+	                help="`agent-energy-profiler validate --counter-disturbance --json` "
+	                     "output, when run on its own (under `run`, pass it to run)")
 	ap.add_argument("--hf-model", default="", help="e.g. distilgpt2 (optional)")
 	ap.add_argument("--prompts", type=int, default=8)
 	ap.add_argument("--new-tokens", type=int, default=64)
@@ -94,10 +101,11 @@ def main():
 	if device.type == "cuda":
 		attrs["gpu"] = torch.cuda.get_device_name(device)
 
-	# Under `agent-energy-profiler run`, its measurement mode applies. On its own there is no
-	# sampler, so per-span counter reads (direct) are the only GPU measurement.
-	with Session.from_env(args.out, overwrite=True, default_mode="direct",
-	                      attributes=attrs) as session:
+	# On its own: a sampler and the default (conservative) mode, which reads the
+	# GPU counter per span only when the hardware report shows that is harmless
+	# here. Under `agent-energy-profiler run`: run's sampler, mode and report.
+	with Session.profile("gpu_inference", out_dir=args.out_dir,
+	                     hardware_report=args.hardware_report, attributes=attrs) as session:
 		with session.span("model:load") as s:
 			if args.hf_model:
 				from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -129,7 +137,7 @@ def main():
 				s.set_tokens(input=n_in, output=n_out)
 				s.set_attribute("tokens_per_s", n_out / (time.perf_counter() - t0))
 	print(f"generated {args.prompts} x {args.new_tokens} tokens on {device}")
-	print(f"spans written to {session.path}")
+	print(f"run directory: {session.out_dir}")
 
 
 if __name__ == "__main__":

@@ -4,8 +4,14 @@
 see the [README](../README.md#quick-start)):
 
 ```bash
-agent-energy-profiler run --out-dir runs/quickstart -- python examples/quickstart.py
+python examples/quickstart.py
 ```
+
+It uses `Session.profile`, the recommended way to profile from Python: it
+starts the hardware sampler, attributes energy when the `with` block ends,
+prints the report to stderr and saves everything in
+`agent-energy-profiler-runs/quickstart-<timestamp>/`. The same script also
+works under `agent-energy-profiler run`.
 
 **Then read [agent_workflow](agent_workflow/).** It is a complete
 walkthrough covering install, instrumentation, running, reporting, and
@@ -21,15 +27,17 @@ internet service or the research infrastructure this profiler came from.
 | [agent_workflow](agent_workflow/) | core package only | retrieval → reasoning → verification traces, retries, concurrent (`shared`) spans; the walkthrough |
 | [cpu_workflow](cpu_workflow/) | core package only | nested spans over ordinary CPU work; why a GPU still reports energy |
 | [gpu_inference](gpu_inference/) | PyTorch with CUDA, an NVIDIA GPU | per-generation GPU energy; synchronising before a span closes |
-| [otel_tracing](otel_tracing/) | the `otel` extra | profiler spans inside an OpenTelemetry-traced service; one trace tree with energy attributes; `bind`, `analyze`, `export_spans` |
+| [otel_tracing](otel_tracing/) | the `otel` extra | profiler spans inside an OpenTelemetry-traced service; one trace tree with energy attributes; `bind`, `session.report`, `export_spans` |
 
-All of them record spans with `Session.from_env(...)`, so they work on their
-own (writing a spans file) and under `agent-energy-profiler run`, which adds
-the hardware sampler, whole-program energy, attribution and a report. Run
-on their own, they have no sampler, so they record timings and, at most,
-per-span GPU counter readings. The four in subdirectories pass
-`default_mode=` explicitly. That mode applies only when the program runs on
-its own (see docs/MEASUREMENT_MODES.md, "SDK default mode migration").
+All of them record with `Session.profile(...)`, so each works two ways:
+
+- **On its own** (`python examples/...`): the profile starts the hardware
+  sampler, attributes the spans when it closes, prints the report to stderr
+  and saves everything in `agent-energy-profiler-runs/<example>-<timestamp>/`
+  (or `--out-dir`). The measurement mode is the default, `auto`.
+- **Under `agent-energy-profiler run`:** `run`'s sampler, mode and report
+  apply, and no second sampler is started. `run` adds whole-program energy
+  (`run.json`).
 
 LangGraph: decorate node functions with `session.trace(label)`; see
 [docs/LANGGRAPH.md](../docs/LANGGRAPH.md).

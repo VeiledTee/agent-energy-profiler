@@ -16,6 +16,8 @@ from agent_energy_profiler import Session
 
 | API | Notes |
 |---|---|
+| `Session.profile(name=None, *, out_dir=None, mode=None, hardware_report=None, attributes=None, report=True, strict=False, quiet=False, **kwargs)` | **the recommended entry point** (0.4.0). A `Session` that creates its run directory (`agent-energy-profiler-runs/<name>-<timestamp>/` unless `out_dir`, which is refused if it already holds any file a profile writes), runs a sampler at 10 Hz with the mode's GPU counter policy, and on close attributes the run, saves `report.json` and `report.txt`, and prints the report to stderr. `hardware_report` sets both resolution and disturbance. `kwargs`: other `Session` arguments except `path`, `sampler`, `overwrite`, `resolution`, `disturbance` and `timeline` (`TypeError`). Under `agent-energy-profiler run` it is `Session.from_env`: no sampler of its own, no report |
+| `session.out_dir`, `.report`, `.profile_status`, `.profile_error` | set by `Session.profile` (`None` on other sessions). `out_dir` is known once the session has started. `profile_status` after close: `"complete"`; `"incomplete"` (stopping the recording, the sampler or attribution failed; `profile_error` holds the first exception; raw files kept); `"recorded"` (`report=False`); `"no_spans"` (no operation-level data: nothing is attributed, and the sampler's whole-session readings are printed, device-level); `"recorded_for_run"`; `"failed_to_start"` |
 | `Session(path, *, attributes=None, gpu="auto", resolution=None, sampler=None, overwrite=False, mode=None, disturbance=None, timeline=None, hooks=())` | context manager (`with`), or `start()` / `close()`. `mode=None` → `auto` since 0.4.0 (`direct` before; [MEASUREMENT_MODES.md](MEASUREMENT_MODES.md#sdk-default-mode-migration)). `mode` may change from `direct` to `sampled` at `start()` when an `auto` session's disturbance test came from another configuration |
 | `Session.from_env(default_path=None, *, attributes=None, default_mode=None, **kwargs)` | configured by `agent-energy-profiler run` when run under it; otherwise `default_path` and `default_mode` (default: `Session`'s, `auto`) |
 | `session.span(name, *, attributes=None, parent=None, trace_id=None)` | sync or async context manager yielding a `SpanHandle`; `name` is the operation label and is required |
@@ -36,8 +38,23 @@ from agent_energy_profiler import Session
 | `MODE_DIRECT`, `MODE_SAMPLED`, `MODE_HYBRID`, `MODE_AUTO`, `MODES`, `SESSION_DEFAULT_MODE` | mode names, their properties, and `Session`'s default |
 | `SessionDefaultModeWarning` | **deprecated**: no longer emitted since 0.4.0; kept for code that filters it, removed in a later minor release |
 
-`agent_energy_profiler.sampling.Sampler(power_file, hz=10.0, ..., counter_hz=None)`:
+`agent_energy_profiler.sampling.Sampler(power_file, hz=10.0, ..., counter_hz=None, watch_parent=False)`:
 the out-of-process hardware sampler, passed as `Session(sampler=...)`.
+`counter_hz=None` reads the GPU energy counter on every row; pass the
+mode's `MODES[mode]["timeline_counter_hz"]` (as `Session.profile` and
+`run` do) to avoid frequent counter reads. `watch_parent=True` (0.4.0) makes
+the sampler stop by itself once the process that started it has exited.
+
+### Lifecycle and failures of `Session.profile`
+
+| Phase | Behaviour |
+|---|---|
+| `Session.profile(...)` | nothing is created or started; a missing `hardware_report` file raises here |
+| `start()` / `with` | creates the directory, starts NVML and the sampler. A taken `out_dir` (`FileExistsError`) or a sampler that produces no samples raises **before your code runs**; `profile_status` is then `"created"` or `"failed_to_start"` |
+| your code raises | the exception propagates unchanged; the run is still attributed and reported |
+| close: sampler or attribution fails | recorded in `profile_status` / `profile_error`, a message names the run directory and the commands to retry; never raised over your exception. With `strict=True` and no exception from your code, close raises `RuntimeError` from the failure |
+| never closed | not attributed; the sampler stops itself when the process exits (`watch_parent`). No exit handler is installed |
+| forked child calls `close()` | nothing happens: the sampler, file and report belong to the parent |
 
 ## Attribution and reports
 

@@ -50,6 +50,55 @@ milestones and were never published.
   `hostname` and `gpu_models` from the report (new optional header keys).
 - Explicit `mode="direct"`, `"sampled"` and `"hybrid"` are unchanged.
 
+### Added: `Session.profile()`
+
+- **`Session.profile(name)`** is the recommended way to profile from
+  Python. It creates a run directory
+  (`agent-energy-profiler-runs/<name>-<timestamp>/`, or `out_dir=`, which is
+  never overwritten) and runs the hardware sampler with the measurement
+  mode's counter policy (never the sampler's every-row default). On close it
+  attributes the run, saves `report.json` and `report.txt`, and prints the
+  report to stderr. `hardware_report=` sets resolution and disturbance
+  together. `report=False` stops after recording, `strict=True` raises at
+  close when the sampler or attribution failed and the workload did not,
+  and `quiet=True` prints nothing. The results are in `session.out_dir`,
+  `session.report`, `session.profile_status` and `session.profile_error`.
+  Under `agent-energy-profiler run` it behaves as `Session.from_env`: no
+  second sampler and no second report.
+- A failure after the workload (stopping the sampler, a non-zero sampler
+  exit code, attribution or the report) never hides the workload's own
+  exception. It keeps the raw files and prints the commands that retry it.
+- `Sampler(watch_parent=True)` (sampler option `--parent-pid`) stops the
+  sampler by itself once the process that started it has exited, as when a
+  notebook kernel is killed or a session is never closed. `Session.profile`
+  turns it on; the default is unchanged. No exit handler is installed.
+- A profile with no span gets status `no_spans`. It attributes nothing and
+  writes no report. It says there is no operation-level data, and prints the
+  sampler's whole-session readings, labelled device-level. An explicit
+  `out_dir` is refused if it already holds any file a profile writes,
+  including `report.json`.
+- `examples/quickstart.py`, `agent_workflow`, `cpu_workflow`, `gpu_inference`
+  and `otel_tracing` use `Session.profile`. Run directly, they now record
+  energy and print a report; under `agent-energy-profiler run` they still
+  use `run`'s sampler, mode and report. The examples' `--out` (a spans file)
+  became `--out-dir`; on their own they now use the default mode, `auto`,
+  instead of `direct` (`gpu_inference` takes `--hardware-report`).
+
+### Fixed: `run` with a session but no spans
+
+- `agent-energy-profiler run` failed with a traceback (exit code 1) when the
+  program opened a session but recorded no span: it attributed zero spans,
+  then could not build a report. It now reports whole-program energy only,
+  says why, and exits with the program's exit code.
+
+### Fixed: sampler start
+
+- `Sampler.start()` returns only once the clock has passed the first row's
+  timestamp. Rows are stamped rounded to the millisecond, so a span opened
+  within 0.5 ms of `start()` could begin before the timeline's first row and
+  be refused by attribution as uncovered. Only the timing of `start()`
+  changes; nothing recorded changes meaning.
+
 ### Deprecated
 
 - `SessionDefaultModeWarning` is no longer emitted. The class remains so

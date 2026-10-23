@@ -395,7 +395,8 @@ class TestExample(Tmp):
 		res = subprocess.run([sys.executable, example, "--out-dir", out_dir, "--work", "20000"],
 		                     capture_output=True, text=True, env=env, timeout=120)
 		self.assertEqual(res.returncode, 0, res.stderr)
-		self.assertIn("mode sampled (requested auto, caller)", res.stdout)
+		# Session.profile with no mode: auto, recorded as the entry point's default
+		self.assertIn("mode sampled (requested auto, default)", res.stdout)
 		self.assertIn("exported 12 profiler spans", res.stdout)
 		self.assertIn("vector_db.query", res.stdout)
 		with open(os.path.join(out_dir, "otel_spans.jsonl")) as f:

@@ -231,6 +231,11 @@ def cmd_run(args, rest):
 		print("  no spans were recorded: the program does not use the SDK "
 		      "(Session.from_env), so only whole-program energy is available.")
 		return proc.returncode
+	if not _has_spans(spans_file):
+		# nothing to attribute; the report cannot be built from zero spans
+		print("  no spans were recorded: the program opened a session but no span, so "
+		      "there is no operation-level data; only whole-program energy is available.")
+		return proc.returncode
 	code = attribution_v2.main(["--spans", spans_file, "--out-dir", out_dir]
 	                           + (["--power", power_file] if sampler is not None else []))
 	if code != 0:
@@ -239,6 +244,18 @@ def cmd_run(args, rest):
 	print()
 	print(report.render_text(report.build(out_dir)))
 	return proc.returncode
+
+
+def _has_spans(spans_file):
+	"""Whether a v2 spans file holds at least one span record."""
+	with open(spans_file) as f:
+		for line in f:
+			try:
+				if json.loads(line).get("record_type") == "span":
+					return True
+			except ValueError:
+				continue
+	return False
 
 
 def _fmt_domain(d):
