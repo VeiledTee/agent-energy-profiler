@@ -1,26 +1,35 @@
 # Examples
 
-**Start with [agent_workflow](agent_workflow/).** It is a complete
+**New here? Run [quickstart.py](quickstart.py) first** (about a minute,
+see the [README](../README.md#quick-start)):
+
+```bash
+agent-energy-profiler run --out-dir runs/quickstart -- python examples/quickstart.py
+```
+
+**Then read [agent_workflow](agent_workflow/).** It is a complete
 walkthrough covering install, instrumentation, running, reporting, and
 measured versus estimated energy. It uses fixed inputs and needs nothing
 beyond the core package.
 
-All four examples are runnable and independent. None needs a paid API, an
+All examples are runnable and independent. None needs a paid API, an
 internet service or the research infrastructure this profiler came from.
 
 | Example | Needs | Shows |
 |---|---|---|
+| [quickstart.py](quickstart.py) | core package only | three named steps per request, nested spans, token counts; the README's quick start |
 | [agent_workflow](agent_workflow/) | core package only | retrieval → reasoning → verification traces, retries, concurrent (`shared`) spans; the walkthrough |
 | [cpu_workflow](cpu_workflow/) | core package only | nested spans over ordinary CPU work; why a GPU still reports energy |
 | [gpu_inference](gpu_inference/) | PyTorch with CUDA, an NVIDIA GPU | per-generation GPU energy; synchronising before a span closes |
 | [otel_tracing](otel_tracing/) | the `otel` extra | profiler spans inside an OpenTelemetry-traced service; one trace tree with energy attributes; `bind`, `analyze`, `export_spans` |
 
-All four record spans with `Session.from_env(...)`, so they work on their
+All of them record spans with `Session.from_env(...)`, so they work on their
 own (writing a spans file) and under `agent-energy-profiler run`, which adds
-the hardware sampler, whole-program energy, attribution and a report. Each
-passes `default_mode=` explicitly. That mode applies only when the program
-runs on its own (see docs/MEASUREMENT_MODES.md, "SDK default mode
-migration").
+the hardware sampler, whole-program energy, attribution and a report. Run
+on their own, they have no sampler, so they record timings and, at most,
+per-span GPU counter readings. The four in subdirectories pass
+`default_mode=` explicitly. That mode applies only when the program runs on
+its own (see docs/MEASUREMENT_MODES.md, "SDK default mode migration").
 
 LangGraph: decorate node functions with `session.trace(label)`; see
 [docs/LANGGRAPH.md](../docs/LANGGRAPH.md).

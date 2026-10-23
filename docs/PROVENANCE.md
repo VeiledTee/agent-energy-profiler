@@ -1243,6 +1243,21 @@ sections are left as they were written.
 | Golden fixture files | unchanged |
 | Thesis repository | clean, still at `08bbc96` |
 
+**Documentation pass (after `930044c`).** README restructured for first
+use; `examples/quickstart.py` added; `agent-energy-profiler run` prints a
+stderr hint when no GPU energy counter is available. No recorded field,
+report value or default changed. Tests: `tests/test_cli.py` (quick start
+under `run`, the no-GPU hint), `tests/test_release.py` (README limits
+section, quick start equals the example file, relative links resolve).
+Validation: full suite 572 passed, 10 skipped (`.venv`, 3.12); 569 / 571
+passed on 3.9 / 3.14; frozen runs 1 passed, 1 skipped; LangGraph venv 43
+passed; golden fixtures and `results/` unchanged. The README's quick start
+was run as written in fresh environments: the GitHub install with `[gpu]`
+(3.12, RTX 4090) and a core-only install of the working tree (3.9). The
+quoted example output is from an earlier run of the same script with the
+repository's `.venv` on the same GPU; the fresh install gave the same
+report structure with values within 1% (estimate 41.468 J vs 41.736 J).
+
 ## Remaining references to the research repository
 
 The research repository is not a dependency: no code imports it, no test

@@ -142,7 +142,7 @@ Then, for each release:
 4. Run the Release workflow with `target: testpypi`, then check:
 
    ```bash
-   python -m venv /tmp/tp && /tmp/tp/bin/pip install \
+   python3 -m venv /tmp/tp && /tmp/tp/bin/pip install \
        --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ \
        agent-energy-profiler==0.4.0
    /tmp/tp/bin/agent-energy-profiler --version

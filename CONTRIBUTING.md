@@ -7,7 +7,7 @@ what a number means is high. Most of this file is about protecting that.
 
 ```bash
 git clone https://github.com/VeiledTee/agent-energy-profiler && cd agent-energy-profiler
-python -m venv .venv
+python3 -m venv .venv
 .venv/bin/pip install -e '.[test]'          # add ,gpu on a machine with an NVIDIA GPU
 git config core.hooksPath scripts/git-hooks  # commit-message guard (see below)
 .venv/bin/python -m pytest
@@ -15,7 +15,17 @@ git config core.hooksPath scripts/git-hooks  # commit-message guard (see below)
 
 Run the suite with `TMPDIR` outside any git working tree: one provenance test
 checks that a temporary directory is not a repository. No GPU is needed;
-every test uses synthetic readers unless explicitly opted in (README, Test).
+every test uses synthetic readers unless explicitly opted in:
+
+```bash
+# re-attribute complete frozen research runs (the run data is not
+# distributed with this repository)
+AEP_FROZEN_RUNS_DIR=/path/to/runs .venv/bin/python -m pytest -m frozen_runs
+# read the real NVML counter through Session
+AEP_REAL_GPU=1 .venv/bin/python -m pytest tests/test_session.py -k real_nvml
+# test an installed wheel from a copy of tests/
+AEP_TEST_INSTALLED=1 python -m pytest tests
+```
 
 Before a release, also check the built wheel in clean environments:
 

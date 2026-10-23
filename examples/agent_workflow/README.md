@@ -23,7 +23,7 @@ LLM calls, tool calls and checks in the same way.
 ```bash
 git clone https://github.com/VeiledTee/agent-energy-profiler
 cd agent-energy-profiler
-python -m venv .venv && . .venv/bin/activate
+python3 -m venv .venv && . .venv/bin/activate
 pip install '.[gpu]'          # [gpu] adds NVIDIA counters; plain `pip install .` works without a GPU
 ```
 

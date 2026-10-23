@@ -15,7 +15,7 @@ This document defines every v2 field **before** it is implemented. The code
 | Kind | Where it lives | Meaning |
 |---|---|---|
 | **Measured** | `energy.<domain>.energy_j` with `status = "measured"` | A difference of a cumulative hardware energy counter across the span's window. Device-level. |
-| **Below resolution** | same field, `status = "measured"`, `below_resolution = true` | Still a counter difference and still reported, unchanged. The window was shorter than the counter's characterised update interval, so the value is quantised (typically exactly 0 J or one update step) and biased low. It is a reading, not an estimate of the operation's energy. |
+| **Below resolution** | same field, `status = "measured"`, `below_resolution = true` | Still a counter difference and still reported, unchanged. The window was shorter than the counter's characterised update interval, so the reported energy is quantised (typically exactly 0 J or one update step) and may not reliably represent the span's consumption. It is a reading, not an estimate of the operation's energy. |
 | **Missing** | `energy.<domain>.energy_j = null`, `status = "unavailable"` or `"invalid"`, with a `reason` | No defensible counter difference exists. Never 0. |
 | **Estimated** | `estimates.<domain>` only | A model-derived value (today: trapezoidal integration of sampled board power). Never placed in `energy`. Never enters `total`. |
 
@@ -292,3 +292,22 @@ Attributes added with `Session.bind(**attributes)` are ordinary span
 - Resolution is unknown unless the reader is given one.
 
 Files with `schema_version` above 2 are rejected, not guessed at.
+
+### Moving code from the v1 API
+
+| v1 | v2 |
+|---|---|
+| `profiler.configure(events_file=..., run_id=...)` | `Session(path, attributes={"run_id": ...})` |
+| `profiler.span("llm:plan") as s; s["input_tokens"] = n` | `session.span("llm:plan") as s; s.set_tokens(input=n)` (`s["input_tokens"] = n` also works) |
+| `profiler.set_question(q)` | `attributes={"question_id": q}` or a parent span per question |
+| `agent-energy-profiler-attribute` | `agent-energy-profiler attribute` (detects the schema) |
+
+| | Schema v1 (`events.jsonl`) | Schema v2 (`spans.jsonl`) |
+|---|---|---|
+| Written by | `profiler.span`, `profiler.configure` (legacy functional API) | `Session` |
+| Attributed by | `agent-energy-profiler attribute` (v1 pipeline, unchanged, byte-identical to the research results) | `agent-energy-profiler attribute` / `agent-energy-profiler-attribute-v2` |
+| Hierarchy | none | trace, span and parent ids; exclusive energy |
+| Estimates | mixed into `gpu_energy_j` (marked by `gpu_energy_source`) | separate `estimates` |
+
+The v1-only tools (`agent-energy-profiler-aggregate`,
+`agent-energy-profiler-visualize`, `trajectory`) do not read v2.

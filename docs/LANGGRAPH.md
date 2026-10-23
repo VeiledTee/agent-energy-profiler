@@ -89,7 +89,7 @@ Neither exists yet.
 ## Re-checking on a new LangGraph version
 
 ```bash
-python -m venv build/venv-lg
+python3 -m venv build/venv-lg
 build/venv-lg/bin/pip install langgraph pytest 'opentelemetry-sdk>=1.20' -e .
 build/venv-lg/bin/python -m pytest tests/test_langgraph.py
 ```

@@ -9,7 +9,7 @@ instead (needs `transformers` and a one-time download).
 ## Install
 
 ```bash
-python -m venv .venv
+python3 -m venv .venv
 .venv/bin/pip install '/path/to/agent-energy-profiler[gpu]' # a clone or wheel, with NVML bindings
 .venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cu124
 .venv/bin/pip install transformers                      # only for --hf-model

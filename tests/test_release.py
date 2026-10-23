@@ -91,12 +91,48 @@ class TestReleaseMetadata(unittest.TestCase):
 		              read("SECURITY.md"))
 
 	def test_readme_states_the_limits_of_the_measurement(self):
-		status = read("README.md").split("## What it measures")[0]
+		readme = read("README.md")
+		# the introduction points to the limits before the quick start
+		intro = readme.split("## Quick start")[0]
+		self.assertIn("(#measurement-limitations)", intro)
+		self.assertIn("not per-process", intro)
+		limits = readme.split("## Measurement limitations")[1].split("\n## ")[0]
 		for phrase in ("measured at device scope", "may be estimated",
 		               "has not been established against an independent meter",
 		               "has not been validated on real hardware",
 		               "demonstrated on one configuration"):
-			self.assertIn(phrase, " ".join(status.replace(">", " ").split()), phrase)
+			self.assertIn(phrase, " ".join(limits.split()), phrase)
+
+	# documentation milestone after 0.4.0: the README is the first-run path
+
+	def test_readme_quick_start_is_the_example_file(self):
+		block = read("README.md").split("**2. Save this as `quickstart.py`.**")[1]
+		code = block.split("```python\n")[1].split("```")[0]
+		self.assertEqual(code, read(os.path.join("examples", "quickstart.py")).expandtabs(4))
+
+	def test_relative_links_in_the_readme_and_docs_resolve(self):
+		def anchors(path):
+			slugs = set()
+			for line in read(path).splitlines():
+				if line.startswith("#"):
+					title = line.lstrip("#").strip().lower()
+					slugs.add(re.sub(r"\s", "-", re.sub(r"[^\w\s-]", "", title)))
+			return slugs
+		pages = ["README.md", "CONTRIBUTING.md", os.path.join("examples", "README.md")]
+		pages += [os.path.join("docs", f) for f in os.listdir(os.path.join(ROOT, "docs"))
+		          if f.endswith(".md")]
+		for page in pages:
+			text = re.sub(r"(?s)```.*?```", "", read(page))
+			for target in re.findall(r"\]\(([^)\s]+)\)", text):
+				if re.match(r"[a-z]+:", target):
+					continue
+				path, _, anchor = target.partition("#")
+				resolved = (os.path.normpath(os.path.join(os.path.dirname(page), path))
+				            if path else page)
+				self.assertTrue(os.path.exists(os.path.join(ROOT, resolved)),
+				                f"{page}: {target}")
+				if anchor and resolved.endswith(".md"):
+					self.assertIn(anchor, anchors(resolved), f"{page}: {target}")
 
 
 if __name__ == "__main__":

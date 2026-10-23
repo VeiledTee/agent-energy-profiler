@@ -6,5 +6,9 @@ dist/
 .venv/
 .pytest_cache/
 .mypy_cache/
+# Output of the documented example commands, run from a clone
+/runs/
+/agent-energy-profiler-runs/
+/*_spans.jsonl
 # Local assistant instructions: kept in each developer's working copy, not published.
 CLAUDE.md

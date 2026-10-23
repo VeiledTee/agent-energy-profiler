@@ -6,7 +6,7 @@ serialise), each a span, all inside one `pipeline:run` span.
 ## Install
 
 ```bash
-python -m venv .venv
+python3 -m venv .venv
 .venv/bin/pip install /path/to/agent-energy-profiler        # not on PyPI: a clone or wheel
 .venv/bin/pip install '/path/to/agent-energy-profiler[gpu]' # a clone or wheel, with NVML bindings
 ```

@@ -114,6 +114,38 @@ class TestRun(CliCase):
 	def test_missing_command(self):
 		self.assertEqual(cli("run", "--out-dir", self.d).returncode, 2)
 
+	def test_readme_quick_start_runs(self):
+		# the README's quick start is examples/quickstart.py, run as documented
+		out = os.path.join(self.d, "runs", "quickstart")
+		res = cli("run", "--out-dir", out, "--", sys.executable,
+		          os.path.join(EXAMPLES, "quickstart.py"), env=self.fake_env(), cwd=self.d)
+		self.assertEqual(res.returncode, 0, res.stderr)
+		for label in ("agent:answer", "retrieval:search", "llm:generate", "verify:check"):
+			self.assertIn(label, res.stdout)
+		self.assertIn("ESTIMATED ENERGY", res.stdout)
+		res = cli("report", out)
+		self.assertEqual(res.returncode, 0, res.stderr)
+		self.assertIn("llm:generate", res.stdout)
+
+	def test_no_gpu_counter_says_why(self):
+		fake = self.fake_env()
+		with open(os.path.join(fake["PYTHONPATH"], "pynvml.py"), "a") as f:
+			f.write("def nvmlDeviceGetCount(): return 0\n")
+		res = cli("run", "--out-dir", os.path.join(self.d, "run"), "--no-sampler", "--",
+		          sys.executable, "-c", "pass", env=fake)
+		self.assertEqual(res.returncode, 0, res.stderr)
+		self.assertIn("no GPU energy counter", res.stderr)
+		self.assertIn("agent-energy-profiler validate", res.stderr)
+		res = cli("run", "--out-dir", os.path.join(self.d, "off"), "--no-sampler",
+		          "--gpu", "off", "--", sys.executable, "-c", "pass")
+		self.assertNotIn("no GPU energy counter", res.stderr)
+
+	def test_no_gpu_hint_names_the_extra_when_nvml_is_not_installed(self):
+		from unittest import mock
+		from agent_energy_profiler import cli as cli_module
+		with mock.patch("importlib.util.find_spec", return_value=None):
+			self.assertIn("agent-energy-profiler[gpu]", cli_module._no_gpu_hint())
+
 
 class TestAttributeReportExport(CliCase):
 

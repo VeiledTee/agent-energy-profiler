@@ -433,7 +433,8 @@ def _warnings(acc, rep, summary_missing=False):
 		      f"counter's update interval ("
 		      + (f"~{interval * 1000:.1f} ms" if interval is not None else
 		         "flagged when recorded; the interval is not available to this report")
-		      + "): quantised readings, biased low.")
+		      + "): the reported energy is quantised and may not reliably represent "
+		      "the span's consumption.")
 	if acc.zero_gpu:
 		_warn(w, "ZERO_READINGS", f"{acc.zero_gpu} spans read exactly 0 J of GPU energy. "
 		      f"For short spans this is counter quantisation, not evidence that no "

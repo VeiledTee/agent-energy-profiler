@@ -86,6 +86,15 @@ def cmd_sample(args, rest):
 # agent-energy-profiler run
 # --------------------------------------------------------------------------
 
+def _no_gpu_hint():
+	"""Why `run` found no GPU counter and what to do (stderr only; nothing recorded)."""
+	import importlib.util
+	if importlib.util.find_spec("pynvml") is None:
+		return ("For an NVIDIA GPU, install the gpu extra: "
+		        "pip install 'agent-energy-profiler[gpu]'.")
+	return f"NVML found no GPU with a readable energy counter; `{PROG} validate` shows why."
+
+
 def _gpu_reading(reader):
 	if reader is None:
 		return None
@@ -139,6 +148,9 @@ def cmd_run(args, rest):
 		from .sampling import timeline_meta
 		timeline = timeline_meta(args.power_hz, counter_hz)
 	print(f"{PROG} run: measurement mode {mode} ({mode_reason})", file=sys.stderr)
+	if reader is None and args.gpu != "off":
+		print(f"{PROG} run: no GPU energy counter, so GPU values will be n/a. "
+		      f"{_no_gpu_hint()}", file=sys.stderr)
 	attributes = dict(kv.split("=", 1) for kv in args.attr)
 	env = dict(os.environ)
 	env.update({

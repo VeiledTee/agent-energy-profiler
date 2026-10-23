@@ -75,6 +75,12 @@ milestones and were never published.
   never measured for a hardware reason.
 - The text report states what per-span and whole-run GPU energy mean in the
   recorded mode.
+- `BELOW_RESOLUTION` no longer calls below-resolution readings "biased low":
+  quantisation can err in either direction. It now says the reported energy
+  is quantised and may not reliably represent the span's consumption (also
+  in the README, `docs/SCHEMA_V2.md` and `docs/OPENTELEMETRY.md`). The
+  counter-disturbance warnings, which do describe a downward bias, are
+  unchanged.
 - New report keys: `totals.domains.*.missing_reasons`,
   `totals.estimated_gpu.{n_top_level, n_without_gpu_value,
   without_gpu_value_reasons, reason}`.
@@ -103,6 +109,18 @@ milestones and were never published.
   developer's host name and local paths redacted.
 - Hosted CI on GitHub Actions passes on Python 3.9–3.14, the wheel checks
   and the LangGraph tests; jobs are pinned to `ubuntu-24.04`.
+- README reorganised for first-time users: what the profiler does, a
+  runnable quick start (`examples/quickstart.py`, checked by a test to
+  match the README) with real output, the two ways to run (`run` vs
+  `Session` in Python), choosing a measurement mode, platform support,
+  troubleshooting, then the measurement limitations. Install commands use
+  `python3 -m venv` (stock Ubuntu has no `python`). The v1 → v2 API table
+  moved to `docs/SCHEMA_V2.md`, the opt-in test commands to
+  `CONTRIBUTING.md`. A test checks that relative links in the README, docs
+  and examples resolve.
+- `agent-energy-profiler run` says when no GPU energy counter is available
+  and what to do (install the `gpu` extra, or run `validate`). The message
+  goes to stderr only; nothing recorded changes.
 
 ### Unchanged
 

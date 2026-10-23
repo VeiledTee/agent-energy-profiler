@@ -171,7 +171,7 @@ is overwritten):
 | `.energy_j` | only when `measured` | counter difference, joules, whole device |
 | `.reason` | only when not measured | reason code ([SCHEMA_V2.md](SCHEMA_V2.md) 2.5), e.g. `not_read_by_mode`, `no_counter` |
 | `.resolution_known` | when measured | whether the counter's update interval was characterised |
-| `.below_resolution` | when measured and resolution known | the window was shorter than one counter update: quantised, biased low |
+| `.below_resolution` | when measured and resolution known | the window was shorter than one counter update: the reported energy is quantised and may not reliably represent the span's consumption |
 | `.update_intervals` | when known | duration ÷ update interval |
 | `.source`, `.method`, `.scope` | always | instrument, how the value was derived, `device` |
 | `.diagnostic` | `cpu_core` | never part of a total |
