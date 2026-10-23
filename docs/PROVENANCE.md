@@ -1189,6 +1189,60 @@ not hit it, and M8 behaves the same. Left for a later fix.
 physical hardware; the disturbance finding on a second GPU or driver; CI on
 a hosted runner; Windows and macOS.
 
+## After Milestone 9: hosted CI and the missing-summary report fix
+
+Still 0.4.0 (unpublished). No measurement, schema or field semantics changed.
+
+**Hosted CI.** The repository is public at
+`github.com/VeiledTee/agent-energy-profiler`. The first GitHub Actions run
+(`dbb937e`) failed only in the two Python 3.9 jobs, in
+`actions/setup-python` on the `ubuntu-latest` image, before any test ran.
+`d7e996a` (made by the maintainer in the GitHub web editor) pinned every job
+to `ubuntu-24.04` and moved to `actions/checkout@v7`,
+`actions/setup-python@v7` and `actions/upload-artifact@v6`; the Python
+3.9–3.14 matrix, the wheel checks and the LangGraph job are unchanged. Its
+run passed all eight jobs. The "CI on a hosted runner" items under
+"Not established" in Milestones 7–9 above are therefore settled; those
+sections are left as they were written.
+
+**Fix.** The defect recorded under Milestone 9 ("Found, not changed"):
+
+- Cause: with `session_summary.json` absent, `report.build` has no session
+  header and so an unknown resolution, but the spans keep the
+  `below_resolution` flags set when they were recorded. The
+  `BELOW_RESOLUTION` warning formatted the unknown interval
+  (`None * 1000`) and raised `TypeError`. `agent-energy-profiler report`
+  and `export` failed the same way.
+- `report.py`: a v2 attributed file without a readable summary now yields a
+  partial report: totals, operations, hierarchy and coverage from the
+  spans, plus a `SUMMARY_MISSING` warning naming what is absent and how to
+  get it. The measurement note and the window reason say the summary is
+  missing (before, they claimed a session recorded before measurement
+  modes, and no timeline). `BELOW_RESOLUTION` prints the interval only when
+  it is known. `RESOLUTION_UNKNOWN` is raised when the interval is unknown
+  *and* some measured span is unflagged; for consistent runs this equals
+  the old condition, and it avoids claiming "not characterised" for spans
+  that were flagged.
+- `cli.py`: `report` and `export` turn `OSError`/`ValueError` from locating
+  and reading the input (missing path, empty directory, empty file) into a
+  one-line error and exit status 2, as `otel-export` already did.
+- Tests: `tests/test_report.py::TestSummaryMissing` (4): a lone copy (as a
+  directory and as a file) reports with the same totals as the full run;
+  an unreadable summary counts as missing; the command line reports and
+  exports a lone copy; missing, empty and blank inputs exit 2 with a
+  message.
+
+**Validation on this machine (RTX 4090, WSL2, driver 610.88).**
+
+| Check | Result |
+|---|---|
+| Full suite, `.venv` (3.12) | 567 passed, 10 skipped |
+| Full suite, Python 3.9 / 3.14 (`build/ci-py*`) | 564 / 566 passed, no failures |
+| Frozen research runs (`-m frozen_runs`, 3.12) | 1 passed, 1 skipped, no failures |
+| Reports of the four v1 golden runs and the v2 golden run (attributed and raw), JSON, text and CSV, vs `d7e996a` | identical |
+| Golden fixture files | unchanged |
+| Thesis repository | clean, still at `08bbc96` |
+
 ## Remaining references to the research repository
 
 The research repository is not a dependency: no code imports it, no test
@@ -1224,3 +1278,4 @@ schema v1 and generic in role. Renaming them is a schema-v2 decision.
 | 0.3.0 (M7) | `SessionDefaultModeWarning` for `Session()` without `mode=` (default still `direct`; `auto` planned for 0.4.0); 3.12 float summation on every supported Python (`_compat.sum`), which makes 3.9–3.11 and 3.14 reproduce the reference artifacts; release files, CI, wheel checks. No measured value on 3.12, no field meaning and no default changed. | identical: v1 fixtures and the v2 fixture on Python 3.9–3.14; frozen runs on 3.12 and 3.9 |
 | 0.4.0 (M8) | `Session()` defaults to `auto` (was `direct`); `auto` accepts a `NOT_DETECTED` verdict only for the tested host, driver and GPU models; `SessionDefaultModeWarning` no longer emitted; report wording fixed (no claim of measured GPU energy without a GPU, disturbance warnings only for counters that were read). Explicit modes unchanged; no stored artifact or field meaning changed. | identical: v1 fixtures and the v2 fixture on Python 3.9–3.14; frozen runs on 3.12, 3.9 and 3.14 |
 | 0.4.0 (M9) | Command renamed `aep` → `agent-energy-profiler` (scripts `agent-energy-profiler-*`, default run directory `agent-energy-profiler-runs/`); recorded values and interface names keep `aep`. Publication metadata, `results/` redaction, `CLAUDE.md` untracked. No measurement, schema or field meaning changed. | identical: v1 and v2 fixtures on Python 3.9–3.14; frozen runs on 3.12, 3.9 and 3.14; recorded spans identical to M8 |
+| 0.4.0 (after M9) | Report only: attributed spans without `session_summary.json` give a partial report with `SUMMARY_MISSING` instead of a `TypeError`; `report`/`export` exit 2 with a message for unreadable input. No measured value or field meaning changed. | identical: v1 and v2 fixtures; frozen runs; golden reports identical to `d7e996a` |

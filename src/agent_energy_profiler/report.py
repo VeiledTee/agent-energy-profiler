@@ -405,15 +405,24 @@ def _warn(out, code, message):
 	out.append({"code": code, "message": message})
 
 
-def _warnings(acc, rep):
+def _warnings(acc, rep, summary_missing=False):
 	w = []
 	_warn(w, "DEVICE_LEVEL", "All energy is whole-device energy (every process on the "
 	      "GPU/CPU package), attributed to spans by time window. It is most defensible "
 	      "on an otherwise idle machine running non-concurrent work.")
+	if summary_missing:
+		_warn(w, "SUMMARY_MISSING", "session_summary.json was not found (or not readable) "
+		      "beside the attributed spans, so the session metadata, measurement mode, "
+		      "window measurement and run counter are not in this report. Report on the "
+		      "directory `agent-energy-profiler attribute` wrote, or copy "
+		      "session_summary.json together with spans_attributed.jsonl.")
 	res = rep["resolution"]
+	interval = res.get("gpu_update_interval_s")
 	gpu_cov = acc.coverage["gpu"]
 	n_gpu_measured = sum(v for k, v in gpu_cov.items() if k.startswith("measured"))
-	if n_gpu_measured and res.get("gpu_update_interval_s") is None:
+	# Spans carry their below-resolution flag from recording time, which knew
+	# an interval this report may not (session_summary.json missing).
+	if interval is None and gpu_cov.get("measured_resolution_unknown"):
 		_warn(w, "RESOLUTION_UNKNOWN", "The GPU counter's update interval was not "
 		      "characterised for this run, so short spans cannot be flagged as below "
 		      "resolution. Run `agent-energy-profiler validate --json hw.json` and pass the report.")
@@ -421,8 +430,10 @@ def _warnings(acc, rep):
 	if below:
 		_warn(w, "BELOW_RESOLUTION", f"{below} of {n_gpu_measured} measured GPU values "
 		      f"({100.0 * below / n_gpu_measured:.1f}%) come from spans shorter than the "
-		      f"counter's update interval (~{res['gpu_update_interval_s'] * 1000:.1f} ms): "
-		      f"quantised readings, biased low.")
+		      f"counter's update interval ("
+		      + (f"~{interval * 1000:.1f} ms" if interval is not None else
+		         "flagged when recorded; the interval is not available to this report")
+		      + "): quantised readings, biased low.")
 	if acc.zero_gpu:
 		_warn(w, "ZERO_READINGS", f"{acc.zero_gpu} spans read exactly 0 J of GPU energy. "
 		      f"For short spans this is counter quantisation, not evidence that no "
@@ -533,6 +544,10 @@ def _measurement_section(schema, summary):
 		out = {"recorded": False, "model_version": 1,
 		       "note": "schema-v1 run: GPU counter read in-band at every event boundary; "
 		               "the sampler's counter rate and counter disturbance were not recorded"}
+	elif summary is None:
+		out = {"recorded": False, "model_version": None,
+		       "note": "unknown: session_summary.json, which holds the session's measurement "
+		               "configuration, is missing"}
 	elif not meas:
 		out = {"recorded": False, "model_version": 1,
 		       "note": "session recorded before measurement modes: per-span GPU counter "
@@ -631,7 +646,7 @@ def build(path, resolution=None):
 	rep["coverage"] = {d: {"states": dict(sorted(acc.coverage[d].items())),
 	                       "reasons": dict(sorted(acc.reasons[d].items()))}
 	                   for d in DOMAINS if acc.coverage[d]}
-	rep["warnings"] = _warnings(acc, rep)
+	rep["warnings"] = _warnings(acc, rep, summary_missing=schema == 2 and summary is None)
 	return rep
 
 
@@ -668,7 +683,9 @@ def analyze(spans, power=None, out_dir=None, resolution_report=None, allow_uncov
 def _window_section(schema, record_file, summary):
 	"""Independent whole-window measurement, if the attribution produced one."""
 	if schema == 2:
-		window = (summary or {}).get("window")
+		if summary is None:
+			return {"available": False, "reason": "session_summary.json is missing"}
+		window = summary.get("window")
 		if not window:
 			return {"available": False,
 			        "reason": "no hardware timeline was supplied to attribution"}

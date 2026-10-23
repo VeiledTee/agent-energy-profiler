@@ -1,12 +1,14 @@
 """M3: the version-aware report (schema v1 and v2)."""
 
 import asyncio
+import contextlib
 import csv
 import gzip
 import io
 import json
 import math
 import os
+import shutil
 import tempfile
 import unittest
 
@@ -197,6 +199,79 @@ class TestShared(V2Case):
 		self.assertEqual(rep["source"]["kind"], "raw")
 		self.assertIn("NO_TIMELINE", codes(rep))
 		self.assertIsNotNone(rep["totals"]["domains"]["gpu"]["total_j"])
+
+
+class TestSummaryMissing(V2Case):
+	"""spans_attributed.jsonl without its session_summary.json (once a TypeError)."""
+
+	def record(self, resolution=Resolution.configured(10.0, "test")):
+		# one span far shorter than the interval: flagged below resolution
+		with Session(self.spans, mode="direct", gpu=CallableReader(Counter_().read),
+		             resolution=resolution) as s:
+			with s.span("llm:x"):
+				pass
+
+	def lone_copy(self):
+		lone = os.path.join(self.d, "lone")
+		os.makedirs(lone)
+		shutil.copy(os.path.join(self.d, "spans_attributed.jsonl"), lone)
+		return lone
+
+	def test_lone_attributed_spans_give_a_partial_report(self):
+		self.record()
+		full = self.attribute(power=False)
+		self.assertNotIn("SUMMARY_MISSING", codes(full))
+		lone = self.lone_copy()
+		for path in (lone, os.path.join(lone, "spans_attributed.jsonl")):
+			rep = report.build(path)
+			self.assertIn("SUMMARY_MISSING", codes(rep))
+			self.assertIn("BELOW_RESOLUTION", codes(rep))
+			# the spans were flagged when recorded; the interval was known then
+			self.assertNotIn("RESOLUTION_UNKNOWN", codes(rep))
+			self.assertEqual(rep["coverage"]["gpu"]["states"], {"measured_below_resolution": 1})
+			self.assertEqual(rep["totals"], full["totals"])
+			self.assertFalse(rep["measurement"]["recorded"])
+			self.assertIn("session_summary.json", rep["measurement"]["note"])
+			self.assertFalse(rep["window"]["available"])
+			self.assertIn("session_summary.json", rep["window"]["reason"])
+			self.assertIsNone(rep["run"]["session_id"])
+			json.loads(json.dumps(rep))
+			report.operations_csv(rep)
+			self.assertIn("SUMMARY_MISSING", report.render_text(rep))
+
+	def test_unreadable_summary_counts_as_missing(self):
+		self.record()
+		self.attribute(power=False)
+		with open(os.path.join(self.d, "session_summary.json"), "w") as f:
+			f.write("{truncated")
+		self.assertIn("SUMMARY_MISSING", codes(report.build(self.d)))
+
+	def test_cli_reports_and_exports_lone_spans(self):
+		from agent_energy_profiler import cli
+		self.record()
+		self.attribute(power=False)
+		lone = self.lone_copy()
+		out, err = io.StringIO(), io.StringIO()
+		with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+			self.assertEqual(cli.main(["report", lone]), 0)
+			self.assertEqual(cli.main(["report", lone, "--format", "json"]), 0)
+			self.assertEqual(cli.main(["export", lone, "--out-dir",
+			                           os.path.join(self.d, "exp")]), 0)
+		self.assertIn("SUMMARY_MISSING", out.getvalue())
+
+	def test_cli_missing_or_empty_input_is_an_error_not_a_traceback(self):
+		from agent_energy_profiler import cli
+		empty = os.path.join(self.d, "empty")
+		os.makedirs(empty)
+		blank = os.path.join(self.d, "blank.jsonl")
+		open(blank, "w").close()
+		for command in ("report", "export"):
+			for path in (os.path.join(self.d, "nope"), empty, blank):
+				err = io.StringIO()
+				with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+					args = [command, path] + (["--out-dir", self.d] if command == "export" else [])
+					self.assertEqual(cli.main(args), 2, (command, path))
+				self.assertIn(f"agent-energy-profiler {command}: ", err.getvalue())
 
 
 class TestV1(unittest.TestCase):

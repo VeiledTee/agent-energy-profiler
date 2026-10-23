@@ -275,7 +275,11 @@ def cmd_attribute(args, rest):
 def cmd_report(args, rest):
 	from . import report
 	resolution = _resolution(args) if args.resolution_report else None
-	rep = report.build(args.input, resolution)
+	try:
+		rep = report.build(args.input, resolution)
+	except (OSError, ValueError) as e:
+		print(f"{PROG} report: {e}", file=sys.stderr)
+		return 2
 	if args.format == "json":
 		text = json.dumps(rep, indent=2)
 	elif args.format == "csv":
@@ -322,8 +326,12 @@ def _span_row(span):
 
 def cmd_export(args, rest):
 	from . import report, schema_v2
-	path = report.locate(args.input)
-	schema, kind = report.classify(path)
+	try:
+		path = report.locate(args.input)
+		schema, kind = report.classify(path)
+	except (OSError, ValueError) as e:
+		print(f"{PROG} export: {e}", file=sys.stderr)
+		return 2
 	if kind != "attributed":
 		print(f"{PROG} export: attribute the run first ({PROG} attribute)", file=sys.stderr)
 		return 2

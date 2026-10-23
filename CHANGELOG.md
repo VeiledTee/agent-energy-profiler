@@ -79,6 +79,20 @@ milestones and were never published.
   `totals.estimated_gpu.{n_top_level, n_without_gpu_value,
   without_gpu_value_reasons, reason}`.
 
+### Fixed: report on attributed spans without `session_summary.json`
+
+- `report.build` (and `agent-energy-profiler report` / `export`) raised
+  `TypeError` when `spans_attributed.jsonl` had been copied without its
+  `session_summary.json` and some spans were flagged below resolution. It
+  now returns a partial report: totals, operations and coverage from the
+  spans, a new `SUMMARY_MISSING` warning saying what is absent and how to
+  get it, and the measurement and window sections marked unknown because
+  the summary is missing (they used to claim an old session or no
+  timeline). `BELOW_RESOLUTION` gives the interval only when it is known;
+  `RESOLUTION_UNKNOWN` is raised only for spans that were not flagged.
+- `agent-energy-profiler report` and `export` print an error and exit 2 for
+  a missing, empty or unrecognised input instead of a traceback.
+
 ### Project
 
 - Project URLs (GitHub `VeiledTee/agent-energy-profiler`), private
@@ -87,6 +101,8 @@ milestones and were never published.
   measurement's limits up front.
 - `results/` (raw counter-disturbance data) documented, with the
   developer's host name and local paths redacted.
+- Hosted CI on GitHub Actions passes on Python 3.9–3.14, the wheel checks
+  and the LangGraph tests; jobs are pinned to `ubuntu-24.04`.
 
 ### Unchanged
 

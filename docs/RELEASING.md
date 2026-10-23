@@ -1,7 +1,8 @@
 # Releasing
 
 How this repository is published and how a release is made. As of 0.4.0
-the project has no remote, no hosted CI run and no PyPI release yet.
+the repository is public on GitHub and hosted CI passes (first green run:
+`d7e996a`, 2026-10-23, all eight jobs). There is no PyPI release yet.
 
 | Item | Decision |
 |---|---|
@@ -68,8 +69,13 @@ git push -u origin main
 ### 4. Hosted CI (~10 minutes, mostly waiting)
 
 The push triggers `.github/workflows/ci.yml`: the suite on Python 3.9–3.14,
-the wheel checks and the LangGraph tests. CI has never run on a hosted
-runner before this push, so expect to fix environment differences.
+the wheel checks and the LangGraph tests. Done for 0.4.0: in the first
+hosted run (`dbb937e`) the Python 3.9 jobs (`tests (Python 3.9)` and the
+wheel job) failed in `actions/setup-python` on the `ubuntu-latest` image,
+before any test ran; every other job passed. `d7e996a` pinned every job to `ubuntu-24.04` and moved to
+`actions/checkout@v7`, `actions/setup-python@v7` and
+`actions/upload-artifact@v6` (the Node.js 20 versions are deprecated); its
+run passed every job.
 
 ```bash
 gh run list --workflow CI --limit 1
@@ -103,22 +109,22 @@ permissions:
   contents: read
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04             # pinned, as in ci.yml
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with: {python-version: "3.13"}
       - run: python -m pip install build twine && python -m build && python -m twine check --strict dist/*
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with: {name: dist, path: dist/}
   publish:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: ${{ inputs.target }}
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v6  # same major as upload-artifact; check before use
         with: {name: dist, path: dist/}
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
