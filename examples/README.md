@@ -9,7 +9,8 @@ python examples/quickstart.py
 
 It uses `Session.profile`, the recommended way to profile from Python: it
 starts the hardware sampler, attributes energy when the `with` block ends,
-prints the report to stderr and saves everything in
+prints a brief summary to stderr and saves everything (including the full
+report) in
 `agent-energy-profiler-runs/quickstart-<timestamp>/`. The same script also
 works under `agent-energy-profiler run`.
 
@@ -32,8 +33,8 @@ internet service or the research infrastructure this profiler came from.
 All of them record with `Session.profile(...)`, so each works two ways:
 
 - **On its own** (`python examples/...`): the profile starts the hardware
-  sampler, attributes the spans when it closes, prints the report to stderr
-  and saves everything in `agent-energy-profiler-runs/<example>-<timestamp>/`
+  sampler, attributes the spans when it closes, prints a brief summary to
+  stderr and saves everything, including the full report, in `agent-energy-profiler-runs/<example>-<timestamp>/`
   (or `--out-dir`). The measurement mode is the default, `auto`.
 - **Under `agent-energy-profiler run`:** `run`'s sampler, mode and report
   apply, and no second sampler is started. `run` adds whole-program energy

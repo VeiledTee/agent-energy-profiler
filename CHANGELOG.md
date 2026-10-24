@@ -58,7 +58,7 @@ milestones and were never published.
   never overwritten) and runs the hardware sampler with the measurement
   mode's counter policy (never the sampler's every-row default). On close it
   attributes the run, saves `report.json` and `report.txt`, and prints the
-  report to stderr. `hardware_report=` sets resolution and disturbance
+  brief summary to stderr (below). `hardware_report=` sets resolution and disturbance
   together. `report=False` stops after recording, `strict=True` raises at
   close when the sampler or attribution failed and the workload did not,
   and `quiet=True` prints nothing. The results are in `session.out_dir`,
@@ -83,6 +83,62 @@ milestones and were never published.
   use `run`'s sampler, mode and report. The examples' `--out` (a spans file)
   became `--out-dir`; on their own they now use the default mode, `auto`,
   instead of `direct` (`gpu_inference` takes `--hardware-report`).
+
+### Added: brief report
+
+- **`agent-energy-profiler report RUN --brief`** and
+  `brief.build(path)` / `brief.render(summary)`: one screen saying which
+  operations energy went to. It shows the run's duration and whole-run
+  measured energy per device, and each operation's count and latency
+  (total, p50, p95). Operations are ranked on one basis, never mixed:
+  measured exclusive GPU energy, else estimated GPU energy (marked `~`),
+  else measured exclusive CPU package energy.
+- An operation is ranked only when every one of its spans has a value on
+  that basis. Estimates have no exclusive form, so only leaf spans that
+  nothing overlapped are ranked by estimate. Operations that are `shared`,
+  `partial`, a `parent` (for estimates) or entirely below the counter's
+  resolution are listed with `n/a` or their value, with the reason, and
+  never ranked or shown as 0. When nothing is comparable, operations are
+  listed by total time with the reason. It ends with per-span coverage, a
+  device-level caveat, the full report's command and its warning codes.
+- **`Session.profile` prints the brief summary** at close instead of the
+  full report. `report="full"` prints the full report; `report.txt` and
+  `report.json` are unchanged and still the full report. If the summary
+  cannot be built, the full report is printed instead.
+- A formatting layer: no measured or estimated value, no report key and no
+  CSV column changes.
+
+### Added: HTML report
+
+- **`agent-energy-profiler report RUN --html report.html`** writes one
+  self-contained, offline file with three views:
+  - a workflow explorer: the span hierarchy with repeated operations
+    grouped, latency, energy on one ranking basis, notes, and every span's
+    values with their kind and reason;
+  - an operation breakdown, by path or by label;
+  - provenance: mode, sampler, coverage, warnings and limitations.
+
+  Opt-in: `Session.profile` does not write it.
+- Built from `view_model.build()`, a versioned and validated view model that
+  uses the reports' own rules. Path rows are the same accounting grouped by
+  hierarchy path (`report._build(key=...)`). The page only displays, sorts
+  and filters.
+- Shareable by default: attributes are left out unless named
+  (`--attributes`) or all allowed (`--all-attributes`). Host names, file
+  paths and span, trace and session ids are left out. A
+  Content-Security-Policy allows only the page's own script and style, and
+  no network access.
+- Operation labels are kept as written. `report --html` warns when they
+  look like free text (prompts or user input), and `--redact-labels`
+  replaces them with `operation N`.
+
+### Fixed: `est. gpu J` in the full report
+
+- `BY OPERATION` is headed "energy: exclusive", but its `est. gpu J` column
+  sums each span's whole-window estimate, so a parent's value includes its
+  children's (estimates have no exclusive form). When such a run has nested
+  spans, the full text report now says so below the table. The README
+  wrongly described the column as exclusive. No value changed.
 
 ### Fixed: `run` with a session but no spans
 

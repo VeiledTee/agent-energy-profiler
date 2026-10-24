@@ -54,7 +54,8 @@ with Session.profile("agent_workflow") as session:
 `Session.profile` works both ways. Run on its own
 (`python examples/agent_workflow/agent.py --work 100000`), it starts the
 hardware sampler, and when the session closes it attributes the spans,
-prints the report to stderr and saves everything in
+prints a brief summary to stderr and saves everything, including the full
+report (`report.txt`), in
 `agent-energy-profiler-runs/agent_workflow-<timestamp>/` (or `--out-dir`).
 Under `agent-energy-profiler run`, it records into `run`'s directory with
 `run`'s sampler and measurement mode, and `run` prints the report.
@@ -88,7 +89,8 @@ spans and prints the report. `runs/agent/` then holds:
 ## 4. Generate a report
 
 ```bash
-agent-energy-profiler report runs/agent                       # text, as printed by run
+agent-energy-profiler report runs/agent --brief               # one screen: operations ranked by energy where comparable
+agent-energy-profiler report runs/agent                       # the full text report, as printed by run
 agent-energy-profiler report runs/agent --format json         # every number, machine-readable
 agent-energy-profiler export runs/agent --out-dir runs/agent/export   # spans.csv, operations.csv, report.json
 ```
@@ -147,11 +149,13 @@ How to read it:
    during 1.6 s, plus anything else using the GPU at the time. GPU energy is
    measured at device scope. A span's value says what the device used while
    the span was open, not what the span caused.
-4. **Exclusive, not double-counted.** Per-operation energy is exclusive: a
-   parent keeps only what its children do not cover. `agent:question` and
-   `llm:reason` show nearly the same figure because the reasoning step takes
-   almost all of each question's time. Totals add only the six top-level
-   spans.
+4. **Estimates are not exclusive.** Measured per-operation energy (`gpu J`,
+   `cpu_pkg J`) is exclusive: a parent keeps only what its children do not
+   cover. An estimate covers the span's whole window, so `est. gpu J` for
+   `agent:question` (45.724 J) includes its children's, mostly
+   `llm:reason` (45.699 J): do not add the two. Totals add only the six
+   top-level spans. The brief summary (`report runs/agent --brief`) ranks
+   estimates by leaf spans only and lists `agent:question` as `parent`.
 5. **Missing is `n/a`, never 0.** CPU package and DRAM need RAPL, which WSL2
    does not expose, so every span says `no_counter`.
 

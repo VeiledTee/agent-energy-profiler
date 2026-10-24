@@ -150,8 +150,11 @@ def _quantile(sorted_values, q):
 
 class _Accumulator:
 
-	def __init__(self, schema):
+	def __init__(self, schema, key=None):
 		self.schema = schema
+		# what an "operation" is: the span's label, unless the view model
+		# groups by hierarchy path with the same rules
+		self.key = key or (lambda span: span.get("name"))
 		self.n = 0
 		self.status = Counter()
 		self.coverage = {d: Counter() for d in DOMAINS}
@@ -164,6 +167,11 @@ class _Accumulator:
 		                                   "energy": defaultdict(lambda: [0.0, 0, 0]),
 		                                   "estimated_gpu": [0.0, 0]})
 		self.tree = []       # (span_id, parent, name, duration, excl gpu, incl gpu, shared)
+		# per label, for the brief report only (never part of the report dict)
+		self.detail = defaultdict(lambda: {"n": 0, "parents": 0, "shared": 0,
+		                                   "below_resolution": 0, "leaf_estimate": [0.0, 0],
+		                                   "estimate_min_s": None,
+		                                   "missing": {d: Counter() for d in BOUNDARY}})
 		self.shared = 0
 		self.other_sessions = 0
 		self.clock_anomalies = 0
@@ -228,7 +236,7 @@ class _Accumulator:
 			                   {d: _missing_reason(energy.get(d)) for d in BOUNDARY
 			                    if values[d] is None}))
 
-		label = self.labels[span.get("name")]
+		label = self.labels[self.key(span)]
 		if span.get("duration_s") is not None:
 			label["durations"].append(span["duration_s"])
 		if span.get("status") not in (None, "ok"):
@@ -236,6 +244,7 @@ class _Accumulator:
 		if est_value is not None:
 			label["estimated_gpu"][0] += est_value
 			label["estimated_gpu"][1] += 1
+		self._add_detail(span, acc, energy, gpu_measured, est_value)
 		if acc is not None:
 			shared = acc.get("attribution") == "shared"
 			self.shared += shared
@@ -261,6 +270,36 @@ class _Accumulator:
 					slot[1] += 1
 				else:
 					slot[2] += 1
+
+	def _add_detail(self, span, acc, energy, gpu_measured, est_value):
+		"""What the brief report needs beyond the report dict: which spans
+		are parents or shared, why a value is missing, and which GPU
+		estimates can be added up (leaf spans nothing else overlapped)."""
+		d = self.detail[self.key(span)]
+		d["n"] += 1
+		if acc is not None:
+			d["parents"] += bool(acc.get("n_children"))
+			d["shared"] += acc.get("attribution") == "shared"
+		for domain in BOUNDARY:
+			own = energy.get(domain)
+			if not own or own.get("status") != m.MEASURED:
+				d["missing"][domain][_missing_reason(own)] += 1
+			elif acc is not None:
+				ex = acc.get("exclusive", {}).get(domain) or {}
+				if ex.get("status") != m.MEASURED:
+					d["missing"][domain][ex.get("reason") or ex.get("status") or "unknown"] += 1
+		if gpu_measured is not None and (energy.get("gpu") or {}).get("below_resolution") is True:
+			d["below_resolution"] += 1
+		# an estimate is the span's whole window: it can be added to others
+		# only for a leaf span that no other span overlapped (v1 events have
+		# no hierarchy; their overlap is checked over the whole run)
+		if est_value is not None and (acc is None or (not acc.get("n_children")
+		                                              and acc.get("attribution") == "sole")):
+			d["leaf_estimate"][0] += est_value
+			d["leaf_estimate"][1] += 1
+			dur = span.get("duration_s")
+			if dur is not None and (d["estimate_min_s"] is None or dur < d["estimate_min_s"]):
+				d["estimate_min_s"] = dur
 
 
 # --------------------------------------------------------------------------
@@ -580,6 +619,14 @@ def _metadata_v2(summary):
 
 def build(path, resolution=None):
 	"""The report dict for a run directory or a v1/v2 JSON-lines file."""
+	return _build(path, resolution)[0]
+
+
+def _build(path, resolution=None, key=None, visit=None):
+	"""(report dict, accumulator): the brief report reads both.
+
+	`key(span)` groups operations (default: the label); `visit(span)` sees
+	every span as it is accumulated. Both are for the view model."""
 	record_file = locate(path)
 	schema, kind = classify(record_file)
 	source = {"path": os.path.abspath(record_file), "schema": schema, "kind": kind}
@@ -606,7 +653,7 @@ def build(path, resolution=None):
 			                     if header else m.Resolution.unknown())
 		elif schema == 1:
 			res = resolution or m.Resolution.unknown()
-		acc = _Accumulator(schema)
+		acc = _Accumulator(schema, key)
 		if read_schema == 2:
 			with open(read_path) as f:
 				for line in f:
@@ -615,9 +662,13 @@ def build(path, resolution=None):
 						record = json.loads(line)
 						if record.get("record_type") == schema_v2.SPAN:
 							acc.add(record)
+							if visit is not None:
+								visit(record)
 		else:
 			for span in schema_v2.iter_records(read_path, res):
 				acc.add(span)
+				if visit is not None:
+					visit(span)
 	finally:
 		if cleanup is not None:
 			cleanup.cleanup()
@@ -648,7 +699,7 @@ def build(path, resolution=None):
 	                       "reasons": dict(sorted(acc.reasons[d].items()))}
 	                   for d in DOMAINS if acc.coverage[d]}
 	rep["warnings"] = _warnings(acc, rep, summary_missing=schema == 2 and summary is None)
-	return rep
+	return rep, acc
 
 
 def analyze(spans, power=None, out_dir=None, resolution_report=None, allow_uncovered=False):
@@ -664,6 +715,11 @@ def analyze(spans, power=None, out_dir=None, resolution_report=None, allow_uncov
 	and session_summary.json to `out_dir` (default: beside the spans file),
 	exactly as `agent-energy-profiler attribute` does, then builds the report from them.
 	"""
+	return build(_attribute(spans, power, out_dir, resolution_report, allow_uncovered))
+
+
+def _attribute(spans, power=None, out_dir=None, resolution_report=None, allow_uncovered=False):
+	"""analyze() without the report: the attributed spans file it writes."""
 	from .session import Session
 	if isinstance(spans, Session):
 		if not spans.closed:
@@ -678,7 +734,7 @@ def analyze(spans, power=None, out_dir=None, resolution_report=None, allow_uncov
 	attribution_v2.attribute_run(spans, out_dir, power=power or "",
 	                             resolution_report=resolution_report or "",
 	                             allow_uncovered=allow_uncovered)
-	return build(os.path.join(out_dir, "spans_attributed.jsonl"))
+	return os.path.join(out_dir, "spans_attributed.jsonl")
 
 
 def _window_section(schema, record_file, summary):
@@ -875,6 +931,11 @@ def render_text(rep, top=20):
 		         f"{_j((e.get('gpu') or {}).get('energy_j'))}"
 		         f"{_j((e.get('cpu_package') or {}).get('energy_j'))}"
 		         f"{_j(r['estimated_gpu_j'])}")
+	if (any(r["estimated_gpu_j"] is not None for r in ops)
+	        and any(h["depth"] for h in rep["hierarchy"])):
+		# estimates have no exclusive form: a parent's includes its children's
+		L.append("  (est. gpu J is not exclusive: it sums each span's whole window, so a "
+		         "parent's includes its children's)")
 	if rep["hierarchy"]:
 		L.append("")
 		L.append("HIERARCHY (by label path; exclusive GPU energy)")

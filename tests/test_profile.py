@@ -124,8 +124,47 @@ class TestStandalone(ProfileCase):
 		# the report goes to stderr; the program's stdout is left alone
 		self.assertEqual(out.getvalue(), "")
 		self.assertIn(f"profiling into {p.out_dir}", err.getvalue())
-		self.assertIn("ENERGY REPORT", err.getvalue())
+		# the brief summary is printed; the full report is saved
+		self.assertIn("ENERGY SUMMARY (brief)", err.getvalue())
+		self.assertNotIn("ENERGY REPORT", err.getvalue())
 		self.assertIn("llm:generate", err.getvalue())
+		self.assertIn(f"Full report: agent-energy-profiler report {p.out_dir}", err.getvalue())
+		with open(os.path.join(p.out_dir, "report.txt")) as f:
+			self.assertEqual(f.read(), report_module.render_text(p.report) + "\n")
+
+	def test_report_full_prints_the_full_report(self):
+		err = io.StringIO()
+		with contextlib.redirect_stderr(err):
+			with self.profile(quiet=False, report="full") as p:
+				with p.span("llm:generate"):
+					pass
+		self.assertEqual(p.profile_status, "complete")
+		self.assertIn("ENERGY REPORT", err.getvalue())
+		self.assertNotIn("ENERGY SUMMARY", err.getvalue())
+
+	def test_report_brief_is_the_default(self):
+		err = io.StringIO()
+		with contextlib.redirect_stderr(err):
+			with self.profile(quiet=False, report="brief") as p:
+				with p.span("llm:generate"):
+					pass
+		self.assertIn("ENERGY SUMMARY (brief)", err.getvalue())
+
+	def test_an_unknown_report_value_is_refused_before_anything_starts(self):
+		with self.assertRaises(ValueError):
+			Session.profile("x", out_dir=self.out(), report="short")
+		self.assertFalse(os.path.exists(self.out()))
+
+	def test_a_failing_brief_summary_falls_back_to_the_full_report(self):
+		err = io.StringIO()
+		with mock.patch("agent_energy_profiler.brief.render", side_effect=RuntimeError("boom")), \
+		     contextlib.redirect_stderr(err):
+			with self.profile(quiet=False) as p:
+				with p.span("llm:generate"):
+					pass
+		self.assertEqual(p.profile_status, "complete")
+		self.assertIn("the brief summary failed (RuntimeError: boom)", err.getvalue())
+		self.assertIn("ENERGY REPORT", err.getvalue())
 
 	def test_sampler_follows_the_mode_not_its_every_row_default(self):
 		expected = {"direct": "boundaries", "sampled": "boundaries", "hybrid": "every_n_rows",
@@ -394,8 +433,8 @@ class TestExamples(ProfileCase):
 		self.assertTrue(runs[0].startswith("agent_workflow-"))
 		self.assertIn(f"run directory: {os.path.join(Session.PROFILE_RUNS_DIR, runs[0])}",
 		              res.stdout)
-		self.assertIn("ESTIMATED ENERGY", res.stderr)
-		self.assertIn("RUN COUNTER MEASUREMENT", res.stderr)
+		self.assertIn("ranked by ESTIMATED GPU energy", res.stderr)
+		self.assertRegex(res.stderr, r"GPU +[0-9.,]+ J measured \(sampler counter")
 		header = records(os.path.join(self.d, Session.PROFILE_RUNS_DIR, runs[0],
 		                              "spans.jsonl"))[0]
 		self.assertEqual(header["config"]["sampler"]["timeline"]["counter_policy"], "boundaries")
@@ -506,7 +545,7 @@ class TestFailures(ProfileCase):
 
 	def test_attribution_failure_keeps_raw_files_and_says_how_to_recover(self):
 		err = io.StringIO()
-		with mock.patch.object(report_module, "analyze", side_effect=ValueError("boom")):
+		with mock.patch.object(report_module, "_attribute", side_effect=ValueError("boom")):
 			with contextlib.redirect_stderr(err):
 				with self.profile(quiet=False) as p:
 					with p.span("llm:x"):
@@ -526,7 +565,7 @@ class TestFailures(ProfileCase):
 		self.assertEqual([op["operation"] for op in rep["operations"]], ["llm:x"])
 
 	def test_strict_raises_only_when_the_workload_succeeded(self):
-		with mock.patch.object(report_module, "analyze", side_effect=ValueError("boom")):
+		with mock.patch.object(report_module, "_attribute", side_effect=ValueError("boom")):
 			with self.assertRaises(RuntimeError) as ctx:
 				with self.profile("strict-ok", strict=True) as p:
 					with p.span("llm:x"):
@@ -576,7 +615,7 @@ class TestFailures(ProfileCase):
 	def test_sampler_start_failure_raises_before_the_workload(self):
 		calls = []
 		with mock.patch.object(Sampler, "start", side_effect=RuntimeError("no samples")), \
-		     mock.patch.object(report_module, "analyze", side_effect=calls.append):
+		     mock.patch.object(report_module, "_attribute", side_effect=calls.append):
 			p = self.profile()
 			with self.assertRaises(RuntimeError):
 				with p:
@@ -645,7 +684,8 @@ class TestQuickStart(ProfileCase):
 		              res.stderr)
 		for label in ("agent:answer", "retrieval:search", "llm:generate", "verify:check"):
 			self.assertIn(label, res.stderr)
-		self.assertIn("ESTIMATED ENERGY", res.stderr)
+		self.assertIn("ENERGY SUMMARY (brief)", res.stderr)
+		self.assertIn("ESTIMATED GPU energy", res.stderr)
 		with open(os.path.join(run, "report.json")) as f:
 			self.assertEqual(len(json.load(f)["operations"]), 4)
 		# step 4: the CLI reads the directory
@@ -674,7 +714,8 @@ class TestWithoutGpu(ProfileCase):
 		self.assertEqual(res.returncode, 0, res.stderr)
 		self.assertEqual(res.stdout.strip(), "complete")
 		self.assertIn("no GPU energy counter", res.stderr)
-		self.assertIn("ENERGY REPORT", res.stderr)
+		self.assertIn("ENERGY SUMMARY (brief)", res.stderr)
+		self.assertIn("GPU          n/a, not measured (no_counter)", res.stderr)
 		g = {r["name"]: r for r in records(os.path.join(out, "spans_attributed.jsonl"))
 		     if r.get("record_type") == "span"}["llm:x"]["energy"]["gpu"]
 		self.assertEqual((g["status"], g["reason"], g["energy_j"]),

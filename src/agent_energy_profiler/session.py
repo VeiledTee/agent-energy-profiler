@@ -402,9 +402,10 @@ class Session:
 		GPU energy counter as `mode` prescribes (measurement.MODES
 		timeline_counter_hz: first and final row only, except hybrid), never
 		the sampler's every-row default. On close the run is attributed
-		(analyze) and the report is saved as report.json and report.txt,
-		stored in `session.report` and printed to stderr. Nothing is printed
-		to stdout.
+		(analyze) and the full report is saved as report.json and report.txt
+		and stored in `session.report`; a brief summary (brief.render: the
+		operations ranked by energy where comparable, coverage, caveats) is
+		printed to stderr. Nothing is printed to stdout.
 
 		Under `agent-energy-profiler run` (AEP_SPANS_FILE set) this is
 		Session.from_env: the run's directory, mode and sampler are used, no
@@ -415,8 +416,10 @@ class Session:
 		                 report shows counter reads are harmless here)
 		hardware_report  an `agent-energy-profiler validate --json` file; sets
 		                 both the counter resolution and the disturbance verdict
-		report           False: stop after recording; attribute later with
-		                 analyze() or `agent-energy-profiler attribute`
+		report           True or "brief" (default): print the brief summary;
+		                 "full": print the full report instead; False: stop
+		                 after recording, attribute later with analyze() or
+		                 `agent-energy-profiler attribute`
 		strict           raise from close when stopping the sampler, attribution
 		                 or the report failed although the workload succeeded
 		quiet            print nothing to stderr
@@ -436,6 +439,9 @@ class Session:
 		if managed:
 			raise TypeError(f"Session.profile() manages {', '.join(managed)}; "
 			                f"use Session(...) to set them yourself")
+		if report not in (True, False, "brief", "full"):
+			raise ValueError(f"report={report!r}: use True or 'brief' (the default), "
+			                 f"'full', or False")
 		if os.environ.get(cls.ENV_SPANS_FILE):
 			session = cls.from_env(attributes=attributes, mode=mode, **kwargs)
 			session.out_dir = os.path.dirname(os.path.abspath(session.path))
@@ -1063,8 +1069,9 @@ class _Profile:
 		return lines
 
 	def _report(self, session):
-		from . import report as _report
-		rep = _report.analyze(session)
+		from . import brief, report as _report
+		# analyze(), keeping what the brief report needs from the same pass
+		rep, acc = _report._build(_report._attribute(session))
 		session.report = rep
 		text = _report.render_text(rep)
 		with open(os.path.join(session.out_dir, "report.json"), "w") as f:
@@ -1072,5 +1079,14 @@ class _Profile:
 			f.write("\n")
 		with open(os.path.join(session.out_dir, "report.txt"), "w") as f:
 			f.write(text + "\n")
-		if not self.quiet:
+		if self.quiet:
+			return
+		if self.report == "full":
 			_say("\n" + text)
+			return
+		try:
+			_say("\n" + brief.render(brief._summarize(rep, acc, session.out_dir)))
+		except Exception as e:
+			# the run is attributed and saved; only the summary failed
+			_say(f"\nagent-energy-profiler: the brief summary failed ({type(e).__name__}: "
+			     f"{e}); the full report follows.\n{text}")

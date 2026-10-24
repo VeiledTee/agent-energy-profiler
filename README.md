@@ -22,6 +22,35 @@ It is built for agents, pipelines and other programs where one request
 fans out into many operations, and it works with any Python code. The core
 has no dependencies.
 
+**Name the steps of your code, then see the energy of each one:**
+
+```python
+from agent_energy_profiler import Session
+
+with Session.profile("rag-demo") as session:
+    with session.span("agent:answer"):            # labels are your own names
+        with session.span("retrieval:search"):
+            docs = search(question)                # any Python code
+        with session.span("llm:generate"):
+            answer = generate(question, docs)
+```
+
+```bash
+agent-energy-profiler report agent-energy-profiler-runs/rag-demo-<timestamp> --html report.html
+```
+
+Nested spans become a hierarchy. The HTML report is one offline file: a
+workflow explorer of your operations, with time, energy and how each number
+was obtained.
+
+![Workflow explorer: agent:answer with its children llm:generate,
+retrieval:search and verify:check, each with time, estimated GPU energy and
+share](docs/images/workflow-explorer.png)
+
+*A real report of the [quick start](#quick-start) below (NVIDIA RTX 4090,
+WSL2, default mode). The workload is CPU-only, so its GPU values, estimates
+marked `~`, mainly reflect the GPU's idle draw while each step ran.*
+
 > **Status:** beta (0.4.0). Install from GitHub; not on PyPI yet. The
 > numbers are whole-device hardware readings, not per-process energy, and
 > their accuracy has not been checked against an external meter. See
@@ -97,16 +126,21 @@ python quickstart.py
 ```
 
 `Session.profile` starts a hardware sampler, records your spans, and when
-the `with` block ends attributes energy to them and prints a report to
-stderr (your program's stdout is left alone). Everything is saved in a new
-directory, `agent-energy-profiler-runs/quickstart-<timestamp>/`, named on
-the first line of output. Nothing is ever overwritten.
+the `with` block ends attributes energy to them and prints a brief summary
+to stderr (your program's stdout is left alone): the operations ranked by
+energy where their values are comparable, what was measured, and what is
+missing. Everything is saved in a new directory,
+`agent-energy-profiler-runs/quickstart-<timestamp>/`, named on the first
+line of output, including the full report (`report.txt`). Nothing is ever
+overwritten.
 
 **4. Look at the results again, or export them:**
 
 ```bash
 RUN=$(ls -d agent-energy-profiler-runs/quickstart-* | tail -n 1)   # the newest run
-agent-energy-profiler report "$RUN"                       # the text report
+agent-energy-profiler report "$RUN" --brief               # the summary printed at the end
+agent-energy-profiler report "$RUN"                       # the full report, every diagnostic
+agent-energy-profiler report "$RUN" --html report.html    # the workflow explorer, offline
 agent-energy-profiler report "$RUN" --format json         # every number, machine-readable
 agent-energy-profiler export "$RUN" --out-dir "$RUN/export"
 #   -> spans.csv (one row per span), operations.csv, report.json
@@ -115,32 +149,41 @@ agent-energy-profiler export "$RUN" --out-dir "$RUN/export"
 ## Example output
 
 The quick start above, run once on the development machine (NVIDIA RTX 4090,
-driver 610.88, WSL2, `[gpu]` extra, no hardware report). Abridged; your
-numbers will differ with your hardware and its load:
+driver 610.88, WSL2, `[gpu]` extra, no hardware report). This is the whole
+summary printed to stderr; your numbers will differ with your hardware and
+its load:
 
 ```
-agent-energy-profiler: profiling into agent-energy-profiler-runs/quickstart-20261023-145119 (measurement mode sampled)
+agent-energy-profiler: profiling into agent-energy-profiler-runs/quickstart-20261023-191430 (measurement mode sampled)
 
-measurement  mode sampled (requested auto, default); per-span GPU counter reads off
+ENERGY SUMMARY (brief)
+  run        1.11 s (first span start to last span end), 12 spans, 4 operations
+  mode       sampled (requested auto, default)
+  whole run  GPU          47.926 J measured (sampler counter, 1.31 s)
+             CPU package  n/a, not measured (no_counter)
+             DRAM         n/a, not measured (no_counter)
 
-MEASURED ENERGY (hardware counters; basis: root spans)
-  gpu                            n/a    3 of 3 top-level spans lack a measured value (not_read_by_mode x3)
-ESTIMATED ENERGY (spans with no GPU measurement; never added above)
-  gpu (power integration)    72.405 J over 3 of 3 top-level spans
-RUN COUNTER MEASUREMENT (sampler's GPU counter, its own first to last reading)
-  gpu 77.752 J over 1.22 s, 2 readings; brackets all spans: True
+Operations ranked by ESTIMATED GPU energy (~): 10 Hz sampled power integrated over each span,
+  not a counter measurement; leaf spans only, so nothing is counted twice
+    #  operation                    n     total       p50       p95    GPU J est.   share  notes
+    1  llm:generate                 3  900.0 ms  300.0 ms  300.0 ms       ~33.549   81.0%
+    2  retrieval:search             3  150.0 ms   50.0 ms   50.0 ms        ~5.618   13.6%  short
+    3  verify:check                 3   60.0 ms   20.0 ms   20.0 ms        ~2.228    5.4%  short
+    -  agent:answer                 3    1.11 s  370.2 ms  370.2 ms           n/a          parent
+  share: of the ranked operations' GPU J only. ~ marks an estimate.
+  parent: has child spans; an estimate covers the children too, so it is not ranked (their own
+    rows are)
+  short: spans shorter than the 100.0 ms power sampling interval; their estimates are
+    interpolated, not observed
 
-BY OPERATION (energy: exclusive; top 4 by total time)
-  operation                       n     total       p50       p95       gpu J   cpu_pkg J  est. gpu J
-  agent:answer                    3    1.11 s  370.4 ms  370.5 ms         n/a         n/a      72.405
-  llm:generate                    3  900.1 ms  300.0 ms  300.0 ms         n/a         n/a      58.645
-  retrieval:search                3  150.0 ms   50.0 ms   50.0 ms         n/a         n/a       9.773
-  verify:check                    3   60.0 ms   20.0 ms   20.0 ms         n/a         n/a       3.913
-
-WARNINGS
-  [DEVICE_LEVEL] All energy is whole-device energy (every process on the GPU/CPU package), ...
-  [ESTIMATES_PRESENT] 12 spans have only an integrated-power GPU estimate. ...
-  [SPAN_ESTIMATES_ONLY] Mode sampled: spans were not measured with the GPU counter, ...
+Coverage per span
+  GPU:         0 of 12 measured, 12 estimated (not measured: not_read_by_mode x12)
+  CPU package: 0 of 12 measured (not measured: no_counter x12)
+Device-level: energy covers every process on each device and is assigned to
+  operations by time window. A large share shows where energy was used, not that
+  an operation is inefficient: judge that with its output, throughput and workload.
+Full report: agent-energy-profiler report agent-energy-profiler-runs/quickstart-20261023-191430
+  its warnings: ESTIMATES_PRESENT, DOMAIN_UNAVAILABLE, SPAN_ESTIMATES_ONLY
 ```
 
 How to read it:
@@ -148,20 +191,24 @@ How to read it:
 - **Measured vs estimated.** A *measurement* is the difference of a
   hardware energy counter between two readings. An *estimate* is sampled
   average power integrated over a span's time window. In the default mode,
-  each span's GPU energy is an estimate (`est. gpu J`) and the measured GPU
-  figure is the whole-run counter (77.8 J). The two are reported separately
-  and never added together. [Choosing a measurement mode](#choosing-a-measurement-mode)
-  explains when per-span values are measured instead.
-- **Per operation.** `BY OPERATION` gives each label's count, latency and
-  *exclusive* energy: a parent span (`agent:answer`) keeps only what its
-  children do not cover, so nothing is counted twice. Sort your own
-  operations by this table to find the expensive steps.
+  the measured GPU figure is the whole-run counter (47.9 J) and each
+  operation's GPU energy is an estimate, marked `~`. The two are different
+  instruments: they are never added together or compared as one ranking.
+  [Choosing a measurement mode](#choosing-a-measurement-mode) explains when
+  per-span values are measured instead.
+- **Per operation.** `llm:generate` is ranked first: about 81% of the
+  ranked estimates. `agent:answer` is the parent of the other three. Its
+  estimate would include theirs, so it is listed (`parent`) but not ranked.
 - **Device-level.** This pipeline runs entirely on the CPU, so the GPU
-  figures are mostly the GPU's idle draw while each step ran. A span's
-  value is what the device used while the span was open, not what the span
-  caused.
+  figures are mostly the GPU's idle draw while each step ran. That is why
+  the ranking follows the time column here. A span's value is what the
+  device used while the span was open, not what the span caused.
 - **Missing is `n/a`, never 0.** WSL2 exposes no CPU (RAPL) counters, so
-  `cpu_pkg J` is `n/a`, with the reason given in the full report.
+  CPU package energy is `n/a` with its reason.
+
+[Finding where the energy goes](#finding-where-the-energy-goes) explains
+each part of the summary and its limits. The screenshot at the top is the
+HTML report of this same run.
 
 **Without an NVIDIA GPU** (or without the `gpu` extra) the same commands
 work. Timings, the span tree and attributes are recorded, and every energy
@@ -174,6 +221,67 @@ agent-energy-profiler: no GPU energy counter, so GPU values will be n/a. For an 
 
 On Linux hosts with readable RAPL counters, CPU package and DRAM energy are
 measured per span as well.
+
+## Finding where the energy goes
+
+The brief summary answers one question: while which operations was the
+energy used? Read it top to bottom:
+
+1. **The basis line** says what the ranking uses: measured GPU energy (a
+   counter difference), *estimated* GPU energy (integrated sampled power,
+   marked `~`) or measured CPU package energy. One basis per table:
+   measured and estimated values are never ranked together.
+2. **Ranked rows** are where to look first. `share` is each operation's
+   part of the ranked operations' energy, not of the whole run.
+3. **Unranked rows (`-`)** have no comparable value. The note says why:
+   `parent`, `shared`, `partial`, `none` or `quantised`. They are listed,
+   never shown as 0 J.
+4. **Whole run** is measured device energy for the session. It includes
+   time no span covers, and it is never split between operations.
+5. **The last lines** say how many spans have values and which warnings the
+   full report raises.
+
+**Energy is not latency.** A span's energy is the device's energy during
+its time window. A slow step that leaves the GPU idle still collects the
+GPU's idle draw, and a short step at full load can outrank a long one. When
+the device is mostly idle (as in the CPU-only quick start), the energy
+ranking follows the time ranking because idle draw is roughly constant.
+That is what the hardware reported, not a measure of the step's own work.
+Use the time columns for latency and the energy column for energy.
+
+**Exclusive and inclusive.** A measured value in the ranking is
+*exclusive*: a parent span keeps only what its children do not cover, so
+the ranked values add up without counting anything twice. An estimate has
+no exclusive form. It covers the span's whole window, children included.
+So only leaf spans are ranked by estimate, and a parent is listed as
+`parent`. The full report's `est. gpu J` column and its hierarchy view show
+the inclusive values.
+
+**Overlapping work.** Spans that ran at the same time as other recorded
+spans are `shared`: device energy cannot be divided between concurrent
+operations, so they are not ranked. If everything overlapped, the summary
+lists operations by time and says why. To compare operations by energy,
+profile them running one at a time.
+
+**Comparing runs.** Values are comparable only on the same basis, mode,
+device, driver and machine load. A measured value and an estimate are
+different quantities. Each report records its mode (`mode` line) and
+hardware. Repeat a run before trusting a small difference: run-to-run
+variation is not reported.
+
+**What a ranking cannot tell you.** The operation with the most energy
+is where energy was used, not necessarily the inefficient one. Whether it
+is worth its energy depends on what it produced: its output, its
+throughput (for example tokens per second, which you can record with
+`set_tokens`), and the workload. The profiler does not suggest
+optimisations.
+
+**Full diagnostics.** `agent-energy-profiler report RUN` prints the full
+report: measured and estimated totals, the independent window and run
+counter measurements, per-domain coverage, the hierarchy and every warning
+explained. It is also saved as `RUN/report.txt` (and `report.json`). Use
+`Session.profile(..., report="full")` to print it at close instead of the
+summary.
 
 ## What you can do with it
 
@@ -212,7 +320,7 @@ also runs under `agent-energy-profiler run` without changes:
 |---|---|---|
 | Hardware sampler | started and stopped by `Session.profile` | started by `run`; `Session.profile` starts no second one |
 | Output | `agent-energy-profiler-runs/<name>-<timestamp>/` | `--out-dir`, or `agent-energy-profiler-runs/<timestamp>/` |
-| Report | when the `with` block ends: saved as `report.json` and `report.txt`, printed to stderr | printed by `run` at the end |
+| Report | when the `with` block ends: a brief summary printed to stderr; the full report saved as `report.json` and `report.txt` | the full report printed by `run` at the end |
 | Whole-program energy (`run.json`) | no | yes, including interpreter start-up |
 
 Use `run` when you start the program from a shell and also want
@@ -234,6 +342,7 @@ session.profile_status   # "complete"; "incomplete" (see session.profile_error);
 
 | Option | Use it when |
 |---|---|
+| `report="full"` | the full report should be printed instead of the brief summary (both are always saved: `report.txt`, `report.json`) |
 | `report=False` | you attribute later or elsewhere (`analyze(session)`, `agent-energy-profiler attribute`): batch jobs, services, CI that collects raw files |
 | `strict=True` | CI and research runs: closing raises if the sampler or attribution failed, unless your code itself raised |
 | `quiet=True` | nothing should be printed |
@@ -370,6 +479,7 @@ spans, timings, hierarchy, reports and exports. Run
 | "profile incomplete: ... failed" | the sampler or attribution failed after your code ran; the raw files are kept | run the `attribute` and `report` commands the message names |
 | "spans fall outside the hardware timeline" | the sampler stopped early, or the system clock stepped during the run (seen a few times in several hundred short test runs under WSL2) | profile again; `agent-energy-profiler attribute ... --allow-uncovered` keeps the covered spans |
 | Per-span GPU `n/a` with reason `not_read_by_mode`, and an `est. gpu J` column | expected in `sampled` mode | see [Choosing a measurement mode](#choosing-a-measurement-mode) |
+| The brief summary says "Not ranked by energy" | no operation has a comparable value for all of its spans: they overlapped (`shared`), every value is below the counter's resolution, or nothing was measured or estimated | the reason is printed; see [Finding where the energy goes](#finding-where-the-energy-goes) |
 | `RESOLUTION_UNKNOWN` warning | the GPU counter's update interval was not characterised | `agent-energy-profiler validate --json hw.json`, then `run --hardware-report hw.json` |
 | `0 J` or `BELOW_RESOLUTION` on short spans | the span is shorter than the counter's update interval (~100 ms on the development GPU) | profile longer operations, or read these values as quantised |
 | `run: ... already exists; use a new --out-dir`, or `FileExistsError` from `Session.profile(out_dir=...)` | a run is never overwritten | choose a new directory, or leave `out_dir` out for a generated one |
@@ -423,7 +533,8 @@ values are correct.
 | Command | Does |
 |---|---|
 | `agent-energy-profiler run [--mode M] [--hardware-report hw.json] [--out-dir D] -- CMD` | runs CMD with the sampler on, records whole-program energy in `run.json`, and attributes and reports the program's spans |
-| `agent-energy-profiler report DIR_OR_FILE [--format text\|json\|csv]` | the report of a run |
+| `agent-energy-profiler report DIR_OR_FILE [--brief \| --format text\|json\|csv]` | the report of a run; `--brief` gives the one-screen summary |
+| `agent-energy-profiler report DIR_OR_FILE --html report.html` | a self-contained, offline HTML report: workflow explorer, operation breakdown, provenance; attributes left out unless allowed, `--redact-labels` for labels that hold user input ([docs/HTML_REPORT.md](docs/HTML_REPORT.md)) |
 | `agent-energy-profiler export DIR_OR_FILE --out-dir D` | `spans.csv`, `operations.csv`, `report.json` |
 | `agent-energy-profiler validate [--json hw.json] [--counter-disturbance]` | what this host can measure, the GPU counter's update interval, and optionally the disturbance test (~30 s) |
 | `agent-energy-profiler attribute FILE --power power.csv` | joins recorded spans with a hardware timeline (what `run` does for you) |
@@ -449,6 +560,7 @@ OpenTelemetry attribute namespace `aep.*`, and the recorded value
 | Public Python API and compatibility policy | [docs/API.md](docs/API.md) |
 | Measurement modes, defaults and migration | [docs/MEASUREMENT_MODES.md](docs/MEASUREMENT_MODES.md) |
 | Span file format and every report field | [docs/SCHEMA_V2.md](docs/SCHEMA_V2.md) |
+| HTML report: views, privacy, view-model contract | [docs/HTML_REPORT.md](docs/HTML_REPORT.md) |
 | OpenTelemetry correlation and export | [docs/OPENTELEMETRY.md](docs/OPENTELEMETRY.md) |
 | LangGraph | [docs/LANGGRAPH.md](docs/LANGGRAPH.md) |
 | GPU counter disturbance study | [docs/NVML_COUNTER_VALIDATION.md](docs/NVML_COUNTER_VALIDATION.md), raw data in [results/](results/README.md) |
@@ -457,6 +569,11 @@ OpenTelemetry attribute namespace `aep.*`, and the recorded value
 | Release notes | [CHANGELOG.md](CHANGELOG.md) |
 
 ### Reading the report
+
+The brief summary is explained in
+[Finding where the energy goes](#finding-where-the-energy-goes). The full
+report (`agent-energy-profiler report RUN`, `report.txt`) has every
+diagnostic:
 
 | Kind | Where | Meaning |
 |---|---|---|

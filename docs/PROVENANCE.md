@@ -1299,6 +1299,35 @@ No recorded field or attributed value changed. Validation: full suite 611
 passed, 10 skipped (3.12); 608 / 610 on 3.9 / 3.14; LangGraph venv 564; golden
 tests and frozen runs as above; fixtures and `results/` unchanged.
 
+**Brief report.** `brief.py` (`report --brief`, and what `Session.profile`
+prints at close) is a formatting layer over `report.build()`. It reads the
+report dict plus per-label details collected in the same pass
+(`report._build` returns the accumulator, which now also counts parents,
+`shared` spans, below-resolution values, missing-value reasons and
+leaf-span estimates per label). It adds no measurement. The report dict,
+`report.json`, `operations.csv` and every attributed value are unchanged.
+Ranking policy: one basis per table (measured exclusive GPU, else estimated
+GPU, else measured exclusive CPU package). An operation is ranked only when
+every span has a value on that basis and not every value is below the
+counter's resolution. Estimates are ranked for leaf spans that nothing
+overlapped, because an estimate has no exclusive form.
+One full-report change, a correction: `BY OPERATION`'s `est. gpu J` column
+sums whole-window estimates, so a parent's includes its children's, under a
+heading that says "energy: exclusive". `render_text` now adds one line
+saying so when estimates and nested spans are both present. Of the
+reference reports (four v1 fixtures, the v2 fixture attributed and raw, one
+real run), the text of two gained that line; every other line, all JSON and
+all CSV are identical. The README and the agent walkthrough had described
+the column as exclusive and were corrected. Tests: `tests/test_brief.py`
+(25) and 4 in `tests/test_profile.py`. Validation: full suite 640 passed, 10
+skipped (3.12); 637 / 639 on 3.9 / 3.14; LangGraph venv 593; golden tests 14
+passed, 1 skipped; frozen runs 1 passed, 1 skipped; fixtures and `results/`
+unchanged. The examples ran on the RTX 4090 with no sampler left running.
+Cost: on 150,000 synthetic spans, `report.build` takes 2.99–3.04 s against
+2.79–2.83 s before (median of 7, two rounds; about +7% for the per-label
+details, which hold a fixed number of counters per label); `brief.render`
+takes under 1 ms.
+
 ## Remaining references to the research repository
 
 The research repository is not a dependency: no code imports it, no test
@@ -1335,3 +1364,5 @@ schema v1 and generic in role. Renaming them is a schema-v2 decision.
 | 0.4.0 (M8) | `Session()` defaults to `auto` (was `direct`); `auto` accepts a `NOT_DETECTED` verdict only for the tested host, driver and GPU models; `SessionDefaultModeWarning` no longer emitted; report wording fixed (no claim of measured GPU energy without a GPU, disturbance warnings only for counters that were read). Explicit modes unchanged; no stored artifact or field meaning changed. | identical: v1 fixtures and the v2 fixture on Python 3.9–3.14; frozen runs on 3.12, 3.9 and 3.14 |
 | 0.4.0 (M9) | Command renamed `aep` → `agent-energy-profiler` (scripts `agent-energy-profiler-*`, default run directory `agent-energy-profiler-runs/`); recorded values and interface names keep `aep`. Publication metadata, `results/` redaction, `CLAUDE.md` untracked. No measurement, schema or field meaning changed. | identical: v1 and v2 fixtures on Python 3.9–3.14; frozen runs on 3.12, 3.9 and 3.14; recorded spans identical to M8 |
 | 0.4.0 (after M9) | Report only: attributed spans without `session_summary.json` give a partial report with `SUMMARY_MISSING` instead of a `TypeError`; `report`/`export` exit 2 with a message for unreadable input. No measured value or field meaning changed. | identical: v1 and v2 fixtures; frozen runs; golden reports identical to `d7e996a` |
+| 0.4.0 (HTML report) | `view_model` and `html_report` (`report --html`); `report._build` takes an optional grouping key and per-span visitor, defaults unchanged; `brief._rows` factored out of `_summarize`. Nothing recorded or reported changes. | identical: v1 and v2 fixtures; frozen runs; report JSON, CSV and text unchanged by this step |
+| 0.4.0 (brief report) | `Session.profile()`; brief report (`report --brief`, printed by `Session.profile`); the full text report notes that `est. gpu J` is not exclusive when nested spans have estimates. No measured value, report key, CSV column or field meaning changed. | identical: v1 and v2 fixtures; frozen runs; golden report JSON and CSV identical, text identical except that note |

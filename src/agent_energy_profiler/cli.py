@@ -3,7 +3,7 @@
     agent-energy-profiler validate [--json hw.json]       what can this host measure?
     agent-energy-profiler run [options] -- python app.py  run a program under profiling
     agent-energy-profiler attribute <spans|events> --power power.csv --out-dir out/
-    agent-energy-profiler report <run dir or file> [--format text|json|csv]
+    agent-energy-profiler report <run dir or file> [--brief | --format text|json|csv | --html F]
     agent-energy-profiler export <run dir or file> --out-dir exported/
     agent-energy-profiler otel-export <run dir or file> [--endpoint URL | --out FILE]
     agent-energy-profiler sample --out power.csv          the sampler on its own
@@ -246,6 +246,48 @@ def cmd_run(args, rest):
 	return proc.returncode
 
 
+def _report_html(args):
+	"""`report RUN --html FILE`: the self-contained HTML report."""
+	from . import html_report, view_model
+	if args.brief or args.format != "text" or args.out:
+		print(f"{PROG} report: --html writes its own file; it cannot be combined with "
+		      f"--brief, --format or --out", file=sys.stderr)
+		return 2
+	allow = [a.strip() for a in (args.attributes or "").split(",") if a.strip()]
+	if allow and args.all_attributes:
+		print(f"{PROG} report: use --attributes or --all-attributes, not both", file=sys.stderr)
+		return 2
+	resolution = _resolution(args) if args.resolution_report else None
+	try:
+		view = html_report.write(args.input, args.html, attributes=allow,
+		                         all_attributes=args.all_attributes,
+		                         max_instances=args.max_instances, resolution=resolution,
+		                         redact_labels=args.redact_labels)
+	except (OSError, ValueError) as e:
+		print(f"{PROG} report: {e}", file=sys.stderr)
+		return 2
+	info = view["instances_info"]
+	print(f"report -> {args.html} ({info['shown']} of {info['total']} spans listed; every "
+	      f"aggregate covers all of them)")
+	if args.all_attributes:
+		print("  all span and session attributes are included: check the file before sharing it")
+	elif allow:
+		print(f"  attributes included: {', '.join(allow)}")
+	else:
+		print("  attributes omitted (--attributes NAME,... or --all-attributes to include them)")
+	privacy = view["privacy"]
+	if privacy["labels"] == "redacted":
+		print(f"  operation labels replaced by 'operation N' ({privacy['n_labels']} labels)")
+	elif privacy["n_free_text_labels"] or privacy["many_labels"]:
+		why = (f"{privacy['n_free_text_labels']} of {privacy['n_labels']} operation labels look "
+		       f"like free text" if privacy["n_free_text_labels"] else
+		       f"{privacy['n_labels']} distinct operation labels for {info['total']} spans")
+		print(f"  warning: {why}; labels are included as written. If they hold prompts or "
+		      f"user input, check the file before sharing it, or use --redact-labels",
+		      file=sys.stderr)
+	return 0
+
+
 def _has_spans(spans_file):
 	"""Whether a v2 spans file holds at least one span record."""
 	with open(spans_file) as f:
@@ -302,19 +344,30 @@ def cmd_attribute(args, rest):
 
 
 def cmd_report(args, rest):
-	from . import report
+	from . import brief, report
+	if args.html:
+		return _report_html(args)
+	if args.brief and args.format != "text":
+		print(f"{PROG} report: --brief is a text report; --format {args.format} gives the "
+		      f"full data", file=sys.stderr)
+		return 2
 	resolution = _resolution(args) if args.resolution_report else None
 	try:
-		rep = report.build(args.input, resolution)
+		if args.brief:
+			summary = brief.build(args.input, resolution)
+		else:
+			rep = report.build(args.input, resolution)
 	except (OSError, ValueError) as e:
 		print(f"{PROG} report: {e}", file=sys.stderr)
 		return 2
-	if args.format == "json":
+	if args.brief:
+		text = brief.render(summary, top=brief.DEFAULT_TOP if args.top is None else args.top)
+	elif args.format == "json":
 		text = json.dumps(rep, indent=2)
 	elif args.format == "csv":
 		text = report.operations_csv(rep)
 	else:
-		text = report.render_text(rep, top=args.top)
+		text = report.render_text(rep, top=20 if args.top is None else args.top)
 	if args.out:
 		with open(args.out, "w") as f:
 			f.write(text if text.endswith("\n") else text + "\n")
@@ -501,9 +554,28 @@ def build_parser():
 
 	p = sub.add_parser("report", help="readable summary of an attributed run (v1 or v2)")
 	p.add_argument("input", help="run directory or attributed/raw file")
+	p.add_argument("--brief", action="store_true",
+	               help="one screen: operations ranked by energy where comparable, "
+	                    "coverage and caveats (text only)")
 	p.add_argument("--format", choices=("text", "json", "csv"), default="text")
 	p.add_argument("--out", default="")
-	p.add_argument("--top", type=int, default=20)
+	p.add_argument("--top", type=int, default=None,
+	               help="operations to show (default 20; 10 with --brief)")
+	p.add_argument("--html", default="", metavar="FILE",
+	               help="write a self-contained, offline HTML report (workflow explorer, "
+	                    "operation breakdown, provenance) to FILE")
+	p.add_argument("--attributes", default="", metavar="NAMES",
+	               help="--html: comma-separated span and session attributes to include "
+	                    "(default: none)")
+	p.add_argument("--all-attributes", action="store_true",
+	               help="--html: include every attribute (they may hold prompts or personal "
+	                    "data; check the file before sharing it)")
+	p.add_argument("--redact-labels", action="store_true",
+	               help="--html: replace every operation label with 'operation N' (for "
+	                    "labels built from prompts or user input)")
+	p.add_argument("--max-instances", type=int, default=10000, metavar="N",
+	               help="--html: individual spans listed at most (aggregates always cover "
+	                    "every span; default 10000)")
 	p.add_argument("--resolution-report", default="",
 	               help="GPU counter interval for v1 input (v2 records its own)")
 	p.set_defaults(func=cmd_report)
