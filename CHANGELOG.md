@@ -7,6 +7,18 @@ Versions follow [Semantic Versioning](https://semver.org/); before 1.0, a
 minor release may change behaviour, and every such change is announced one
 minor release ahead with a warning.
 
+## Unreleased
+
+Not part of 0.5.0. Measurement behaviour is unchanged.
+
+### Examples
+
+- New example `examples/local_rag`: a local retrieval → generation →
+  verification pipeline with `Qwen/Qwen2.5-1.5B-Instruct` (pinned revision)
+  on an NVIDIA GPU, 12 fixed questions over a fictional handbook, with
+  results from an RTX 4090. Its model dependencies are listed in the
+  example's own `requirements.txt`, not in the package.
+
 ## 0.5.0 — unreleased
 
 The first release published on PyPI. Versions 0.1.0–0.4.0 below were

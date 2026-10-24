@@ -20,7 +20,9 @@ measured versus estimated energy. It uses fixed inputs and needs nothing
 beyond the core package.
 
 All examples are runnable and independent. None needs a paid API, an
-internet service or the research infrastructure this profiler came from.
+account or the research infrastructure this profiler came from. Only
+local_rag (and gpu_inference with `--hf-model`) downloads model weights,
+once; after that they run offline.
 
 | Example | Needs | Shows |
 |---|---|---|
@@ -28,6 +30,7 @@ internet service or the research infrastructure this profiler came from.
 | [agent_workflow](agent_workflow/) | core package only | retrieval → reasoning → verification traces, retries, concurrent (`shared`) spans; the walkthrough |
 | [cpu_workflow](cpu_workflow/) | core package only | nested spans over ordinary CPU work; why a GPU still reports energy |
 | [gpu_inference](gpu_inference/) | PyTorch with CUDA, an NVIDIA GPU | per-generation GPU energy; synchronising before a span closes |
+| [local_rag](local_rag/) | PyTorch with CUDA, `transformers`, an NVIDIA GPU (~3 GB VRAM); a one-time 3 GB model download | a real local RAG pipeline: retrieval → generation (Qwen2.5-1.5B-Instruct) → verification over 12 fixed questions; one-off setup (load, index, warm-up) as its own trace, apart from the repeated question traces; estimated per-stage vs measured whole-program GPU energy; the HTML workflow explorer |
 | [otel_tracing](otel_tracing/) | the `otel` extra | profiler spans inside an OpenTelemetry-traced service; one trace tree with energy attributes; `bind`, `session.report`, `export_spans` |
 
 All of them record with `Session.profile(...)`, so each works two ways:

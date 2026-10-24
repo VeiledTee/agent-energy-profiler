@@ -1,0 +1,12 @@
+{"id": "Q01", "question": "At what temperature is the server room kept?", "answers": ["21 °C", "21°C", "21 degrees"], "source": "P04"}
+{"id": "Q02", "question": "Above which server room temperature must the analysis cluster be shut down?", "answers": ["27 °C", "27°C", "27 degrees"], "source": "P04"}
+{"id": "Q03", "question": "What is the name of the archive server that receives the nightly backups?", "answers": ["Heron"], "source": "P06"}
+{"id": "Q04", "question": "At what time are field data backed up each night?", "answers": ["02:30", "2:30"], "source": "P06"}
+{"id": "Q05", "question": "What is the maximum depth for station dives?", "answers": ["18 metres", "18 meters", "18 m"], "source": "P09"}
+{"id": "Q06", "question": "In which fume hood may formalin be handled?", "answers": ["fume hood 3", "hood 3", "hood number 3"], "source": "P12"}
+{"id": "Q07", "question": "Where is the nearest hospital to the station?", "answers": ["Kestrel Harbour", "Kestrel Harbor"], "source": "P13"}
+{"id": "Q08", "question": "Where is the muster point when the fire alarm sounds?", "answers": ["flagpole"], "source": "P14"}
+{"id": "Q09", "question": "How many beds does the Tern bunkhouse have?", "answers": ["twelve", "12"], "source": "P15"}
+{"id": "Q10", "question": "Along which transect is the kelp survey carried out?", "answers": ["K7"], "source": "P19"}
+{"id": "Q11", "question": "How large is the station's solar array?", "answers": ["48 kW", "48kW", "48 kilowatt"], "source": "P02"}
+{"id": "Q12", "question": "Which freezer holds the frozen tissue samples?", "answers": ["F2"], "source": "P11"}

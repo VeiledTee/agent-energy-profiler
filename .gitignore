@@ -8,6 +8,7 @@ dist/
 .mypy_cache/
 # Output of the documented example commands, run from a clone
 /runs/
+/.venv-rag/
 /agent-energy-profiler-runs/
 /*_spans.jsonl
 # Local assistant instructions: kept in each developer's working copy, not published.

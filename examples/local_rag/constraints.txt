@@ -1,0 +1,12 @@
+# The exact versions the results in README.md were recorded with (Python 3.12).
+# Optional: pip install -r requirements.txt -c constraints.txt
+# torch 2.14.1 here is the CUDA 13.0 build (2.14.1+cu130) from the PyTorch
+# index: add --extra-index-url https://download.pytorch.org/whl/cu130, or drop
+# the torch line and keep the build that matches your driver.
+torch==2.14.1
+transformers==5.20.2
+tokenizers==0.23.3
+huggingface_hub==2.3.0
+safetensors==0.8.0
+numpy==2.5.4
+nvidia-ml-py==13.615.71

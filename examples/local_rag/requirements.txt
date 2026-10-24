@@ -1,0 +1,10 @@
+# examples/local_rag only; agent-energy-profiler itself needs none of these.
+# Install the profiler separately: pip install 'agent-energy-profiler[gpu]'
+# (or, from a clone: pip install -e '.[gpu]').
+#
+# Pick the PyTorch build that matches your NVIDIA driver (pytorch.org).
+# The README's results used the exact versions in constraints.txt
+# (torch 2.14.1+cu130, transformers 5.20.2, Python 3.12, driver 610.88).
+torch>=2.4
+transformers>=4.56
+huggingface_hub>=0.34

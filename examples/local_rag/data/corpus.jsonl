@@ -1,0 +1,26 @@
+{"id": "P01", "title": "About the station", "text": "Larkspur Research Station is a fictional coastal field station invented for this example. It sits on Brenna Point and is staffed from March to November."}
+{"id": "P02", "title": "Solar power", "text": "The station's main power comes from a 48 kW solar array on the north ridge. A 30 kWh battery bank stores surplus solar energy for use at night."}
+{"id": "P03", "title": "Backup generator", "text": "The backup generator runs on biodiesel. It is test-run every Tuesday at 09:00 for fifteen minutes, and the duty engineer records the fuel level afterwards."}
+{"id": "P04", "title": "Server room", "text": "The server room is kept at 21 °C. If the server room temperature rises above 27 °C, the duty engineer must shut down the analysis cluster."}
+{"id": "P05", "title": "Analysis cluster", "text": "The analysis cluster has six nodes with one GPU each. Jobs expected to run longer than four hours must be booked on the cluster calendar."}
+{"id": "P06", "title": "Data backups", "text": "Field data is backed up every night at 02:30 to the archive server named Heron. A weekly copy is shipped to the mainland office on Sundays."}
+{"id": "P07", "title": "Network", "text": "The satellite link provides 40 Mbit/s of download capacity. Video calls are restricted to the library between 18:00 and 20:00."}
+{"id": "P08", "title": "Boats", "text": "The station has two boats: Gannet for inshore sampling and Petrel for offshore work. No boat may launch when the wind exceeds 25 knots."}
+{"id": "P09", "title": "Diving rules", "text": "Every dive needs a buddy and a surface supervisor. The maximum depth for station dives is 18 metres."}
+{"id": "P10", "title": "Weather station", "text": "The automatic weather station logs wind speed, rainfall and air pressure every 10 minutes. Its data feed is called WX-Brenna."}
+{"id": "P11", "title": "Sample storage", "text": "Water samples are kept in the cold room at 4 °C. Frozen tissue samples are stored in the minus-80 freezer labelled F2."}
+{"id": "P12", "title": "Chemical safety", "text": "Formalin may only be handled in fume hood 3. Waste formalin is collected in the yellow drums beside the loading dock."}
+{"id": "P13", "title": "Medical care", "text": "The station manager is the first-aid officer. The nearest hospital is in Kestrel Harbour, 45 minutes away by boat."}
+{"id": "P14", "title": "Emergencies", "text": "When the fire alarm sounds, everyone gathers at the muster point by the flagpole beside the boathouse. Radio channel 16 is monitored at all times."}
+{"id": "P15", "title": "Accommodation", "text": "Visiting researchers stay in the Tern bunkhouse, which has twelve beds. Quiet hours are from 22:00 to 07:00."}
+{"id": "P16", "title": "Meals", "text": "Meals are served in the mess hall at 07:30, 12:30 and 18:30. Dietary requirements must reach the cook one week before arrival."}
+{"id": "P17", "title": "Vehicles", "text": "The station's only road vehicle is an electric utility truck. It is charged from the solar array and must be plugged in overnight."}
+{"id": "P18", "title": "Library", "text": "The library holds the station logbooks back to 1998 and a reference collection of field guides. Logbooks may not leave the library."}
+{"id": "P19", "title": "Kelp survey", "text": "The kelp survey has run every August since 2004 along transect K7, south of the jetty."}
+{"id": "P20", "title": "Seabird counts", "text": "Puffin burrows on Skerry Island are counted each June. Landing on Skerry Island requires a permit from the regional wildlife office."}
+{"id": "P21", "title": "Tide gauge", "text": "The tide gauge at the end of the jetty records the water level every 6 minutes and sends its readings to the archive server once an hour."}
+{"id": "P22", "title": "Waste and recycling", "text": "Recycling is collected on Thursdays. Food waste goes to the compost bays behind the vegetable garden."}
+{"id": "P23", "title": "Drinking water", "text": "Drinking water comes from a rainwater cistern and is treated with ultraviolet light. The cistern holds 60,000 litres."}
+{"id": "P24", "title": "Wet lab booking", "text": "The wet lab is booked through the front office. Bookings open two weeks ahead and are limited to three days per project."}
+{"id": "P25", "title": "Induction", "text": "New staff complete the boat safety course on their first Monday and the radio course in their first week."}
+{"id": "P26", "title": "Energy reporting", "text": "Each month the station manager reports biodiesel use and solar yield to the trustees, together with the battery bank's state of health."}
