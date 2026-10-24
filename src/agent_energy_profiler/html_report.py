@@ -193,6 +193,9 @@ function fmtS(v) {
   if (v < 1) return (v * 1000).toFixed(1) + " ms";
   return v.toFixed(2) + " s";
 }
+function plural(n, word) {
+  return n + " " + word + (n === 1 ? "" : "s");
+}
 function fmtShare(s) {
   if (s === null || s === undefined) return "";
   if (s > 0 && s < 0.001) return "<0.1%";
@@ -281,10 +284,10 @@ function header(root) {
   Object.keys(V.run.status || {}).forEach(function (k) { if (k !== "ok" && k !== "null") notOk += V.run.status[k]; });
   var chips = add(h, el("div", "chips"));
   add(chips, chip(fmtS(V.run.wall_s), "first span start to last span end"));
-  add(chips, chip(V.run.n_spans + " spans"));
-  add(chips, chip(V.run.n_operations + " operations · " + V.run.n_paths + " paths",
+  add(chips, chip(plural(V.run.n_spans, "span")));
+  add(chips, chip(plural(V.run.n_operations, "operation") + " · " + plural(V.run.n_paths, "path"),
     "distinct labels · distinct places in the hierarchy"));
-  if (notOk) add(chips, chip(notOk + " spans not ok", null, "k-invalid"));
+  if (notOk) add(chips, chip(plural(notOk, "span") + " not ok", null, "k-invalid"));
   if (V.mode) add(chips, chip("mode " + V.mode.mode, "requested " + V.mode.requested_mode +
     (V.mode.mode_source ? " (" + V.mode.mode_source + ")" : "")));
   else add(chips, chip(V.run.schema === 1 ? "schema v1" : "mode not recorded"));
@@ -305,7 +308,7 @@ function header(root) {
   var tabs = add(h, el("nav", "tabs"));
   tabs.setAttribute("role", "tablist");
   [["explorer", "Workflow explorer"], ["operations", "Operation breakdown"],
-   ["provenance", "Provenance (" + V.warnings.length + " warnings)"]].forEach(function (t) {
+   ["provenance", "Provenance (" + plural(V.warnings.length, "warning") + ")"]].forEach(function (t) {
     var b = add(tabs, el("button", null, t[1]));
     b.setAttribute("role", "tab");
     b.setAttribute("aria-selected", state.tab === t[0] ? "true" : "false");
@@ -561,8 +564,8 @@ function showSpan(s) {
     ["status", s.status + (s.error_type ? " (" + s.error_type + ")" : "")],
     ["parent", s.parent !== undefined ? "span #" + s.parent : "none (top level)"],
     ["child spans", s.n_children],
-    ["attribution", s.attribution === "shared" ? "shared: overlapped " + (s.concurrent_spans || 0) +
-      " other spans; device energy cannot be split" : (s.attribution || "")],
+    ["attribution", s.attribution === "shared" ? "shared: overlapped " + plural(s.concurrent_spans || 0, "other span") +
+      "; device energy cannot be split" : (s.attribution || "")],
     ["children overlap", s.children_overlap ? "yes: no exclusive value" : ""],
     ["clock", s.clock_anomaly ? "the wall clock stepped during this span" : ""],
     ["other sessions", s.other_sessions_active ? "another Session in this process was active" : ""],
@@ -718,11 +721,11 @@ function provenance(box) {
     add(d, cellNode(c));
   });
   if (P.run_counter) kv(box, [["GPU run counter", P.run_counter.status === "measured" ?
-    fmtJ(P.run_counter.energy_j) + " J over " + fmtS(P.run_counter.duration_s) + ", " + P.run_counter.n_readings +
-    " readings; brackets all spans: " + P.run_counter.brackets_all_spans : "n/a (" + P.run_counter.status + ": " + P.run_counter.reason + ")"]]);
+    fmtJ(P.run_counter.energy_j) + " J over " + fmtS(P.run_counter.duration_s) + ", " + plural(P.run_counter.n_readings, "reading") +
+    "; brackets all spans: " + P.run_counter.brackets_all_spans : "n/a (" + P.run_counter.status + ": " + P.run_counter.reason + ")"]]);
   if (P.counter_intervals && P.counter_intervals.counter_over_estimate_median !== null && P.counter_intervals.counter_over_estimate_median !== undefined) {
     kv(box, [["counter / integrated power", "median " + P.counter_intervals.counter_over_estimate_median.toFixed(3) +
-      " over " + P.counter_intervals.n_intervals + " intervals (diagnostic)"]]);
+      " over " + plural(P.counter_intervals.n_intervals, "interval") + " (diagnostic)"]]);
   }
   if (P.window) {
     if (P.window.available) {

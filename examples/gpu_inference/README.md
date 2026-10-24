@@ -10,7 +10,7 @@ instead (needs `transformers` and a one-time download).
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install '/path/to/agent-energy-profiler[gpu]' # a clone or wheel, with NVML bindings
+.venv/bin/pip install 'agent-energy-profiler[gpu]'      # with NVML bindings; or a clone or wheel
 .venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cu124
 .venv/bin/pip install transformers                      # only for --hf-model
 ```

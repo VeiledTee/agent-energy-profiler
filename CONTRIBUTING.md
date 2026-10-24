@@ -33,7 +33,10 @@ Before a release, also check the built wheel in clean environments:
 python -m build -o build/dist .
 tools/check_wheel.sh python3.9 build/dist/*.whl "" build/w-min
 tools/check_wheel.sh python3 build/dist/*.whl "test,gpu" build/w-full
+tools/smoke_install.sh python3 build/dist/*.whl "" /tmp/aep-smoke   # outside the clone
 ```
+
+The full release checklist is in [docs/RELEASING.md](docs/RELEASING.md).
 
 CI (`.github/workflows/ci.yml`) runs the suite on Python 3.9–3.14, these
 wheel checks, and the LangGraph compatibility tests.

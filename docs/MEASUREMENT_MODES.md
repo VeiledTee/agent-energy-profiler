@@ -64,7 +64,7 @@ report.
 
 | Entry point | Default | Changed in M5? |
 |---|---|---|
-| `Session.profile(...)` (0.4.0) | `auto`, as `Session`; on its own it runs a sampler at 10 Hz with the chosen mode's counter policy (`MODES[mode]["timeline_counter_hz"]`: boundaries, or 1 Hz for `hybrid`), as `run` does; under `run`, `run`'s mode and sampler | new; it never uses the sampler's every-row default |
+| `Session.profile(...)` (0.5.0) | `auto`, as `Session`; on its own it runs a sampler at 10 Hz with the chosen mode's counter policy (`MODES[mode]["timeline_counter_hz"]`: boundaries, or 1 Hz for `hybrid`), as `run` does; under `run`, `run`'s mode and sampler | new; it never uses the sampler's every-row default |
 | `Session(...)` (SDK) | **`auto` since 0.4.0** (`direct` before) | no; changed in 0.4.0 ([migration](#sdk-default-mode-migration)). The header says the mode was defaulted (`mode_source: "default"`) |
 | `Session.from_env(...)` | under `agent-energy-profiler run`: `agent-energy-profiler run`'s mode (`mode_source: "aep_run"`); on its own: `default_mode=` if given (M6), else as `Session` | — |
 | `agent-energy-profiler run` | `--mode auto` (so `sampled` unless a hardware report says `NOT_DETECTED`); sampler power 10 Hz, counter at boundaries | **yes**: M3 read the counter per span and on every sampler row |

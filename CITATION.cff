@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+message: >-
+  If you use this software, please cite it using the metadata from this file.
+type: software
+title: Agent Energy Profiler
+abstract: >-
+  A Python toolkit for operation-level energy profiling of agents, pipelines
+  and other multi-step programs. Named spans are joined with hardware energy
+  counters (NVIDIA NVML for GPUs, Linux RAPL for the CPU package and DRAM),
+  and every value is reported as measured, estimated or missing, with its
+  reason.
+authors:
+  - given-names: Ethan
+    family-names: Heavey
+version: 0.5.0
+license: MIT
+repository-code: "https://github.com/VeiledTee/agent-energy-profiler"
+url: "https://github.com/VeiledTee/agent-energy-profiler"
+keywords:
+  - energy
+  - profiling
+  - GPU
+  - NVML
+  - RAPL
+  - agents
+  - LLM
+  - OpenTelemetry

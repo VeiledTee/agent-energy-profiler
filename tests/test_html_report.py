@@ -95,6 +95,35 @@ class TestPage(HtmlCase):
 		res = subprocess.run(["node", "--check", path], capture_output=True, text=True)
 		self.assertEqual(res.returncode, 0, res.stderr)
 
+	# 0.5.0: "1 spans not ok" in the header
+
+	def test_counts_are_never_written_with_a_fixed_plural(self):
+		# a count followed by a fixed plural noun reads "1 spans"; counts go
+		# through plural(n, word) instead
+		script = html_report._SCRIPT
+		self.assertIsNone(re.search(
+			r'''\+\s*"\s*(?:other\s+)?(?:spans|operations|paths|warnings|readings|intervals)\b''',
+			script))
+		for call in ('plural(V.run.n_spans, "span")', 'plural(notOk, "span") + " not ok"',
+		             'plural(V.run.n_operations, "operation")', 'plural(V.run.n_paths, "path")',
+		             'plural(V.warnings.length, "warning")'):
+			self.assertIn(call, script)
+
+	@unittest.skipUnless(shutil.which("node"), "node is not installed")
+	def test_plural_singular_and_plural(self):
+		fn = re.search(r"(?ms)^function plural\(n, word\) \{.*?^\}", html_report._SCRIPT).group(0)
+		probe = fn + """
+		console.log(JSON.stringify([0, 1, 2, 12].map(function (n) {
+		  return [plural(n, "span") + " not ok", plural(n, "warning"), plural(n, "other span")];
+		})));"""
+		res = subprocess.run(["node", "-e", probe], capture_output=True, text=True)
+		self.assertEqual(res.returncode, 0, res.stderr)
+		self.assertEqual(json.loads(res.stdout), [
+			["0 spans not ok", "0 warnings", "0 other spans"],
+			["1 span not ok", "1 warning", "1 other span"],
+			["2 spans not ok", "2 warnings", "2 other spans"],
+			["12 spans not ok", "12 warnings", "12 other spans"]])
+
 
 class TestCli(HtmlCase):
 

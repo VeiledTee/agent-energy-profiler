@@ -27,8 +27,9 @@ python3 -m venv .venv && . .venv/bin/activate
 pip install '.[gpu]'          # [gpu] adds NVIDIA counters; plain `pip install .` works without a GPU
 ```
 
-Linux (or WSL2) and Python 3.9 or later are required. The package is not on
-PyPI yet.
+Linux (or WSL2) and Python 3.9 or later are required. The clone is for the
+example's files; the package alone installs from PyPI with
+`pip install "agent-energy-profiler[gpu]"`.
 
 ## 2. Instrument the agent
 

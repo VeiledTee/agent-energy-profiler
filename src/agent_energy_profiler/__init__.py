@@ -40,18 +40,23 @@ Energy in Joules is the measured product. Carbon is a separate, explicit
 conversion step (`carbon.py`) that requires the caller to supply a grid
 intensity with provenance; nothing here estimates one.
 
+The layers above are the schema-v1 pipeline, kept for the research runs.
+New code records schema v2 through `Session` (session.py, attribution_v2.py,
+report.py).
+
 Quick start:
 
-    from agent_energy_profiler import profiler
+    from agent_energy_profiler import Session
 
-    with profiler.span("llm:reason") as s:
-        ...
-        s["output_tokens"] = n
+    with Session.profile("my-run") as session:
+        with session.span("llm:reason") as s:
+            ...
+            s.set_tokens(input=812, output=64)
 """
 
 import importlib
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 #: Submodules reachable as attributes of the package. Resolved on first access
 #: rather than at import (PEP 562), for two reasons:

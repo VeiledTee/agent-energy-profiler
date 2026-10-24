@@ -4,17 +4,18 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-energy-profiler"
-version = "0.4.0"
-description = "Hardware-grounded, operation-level energy profiling for agentic systems"
+version = "0.5.0"
+description = "Operation-level energy profiling for AI agents and Python pipelines, from NVIDIA NVML and Linux RAPL counters"
 readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Ethan Heavey" }]
 keywords = ["energy", "profiling", "gpu", "nvml", "rapl", "agents", "llm",
-            "opentelemetry"]
+            "opentelemetry", "green-ai", "sustainability"]
 classifiers = [
     "Development Status :: 4 - Beta",
+    "Environment :: Console",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "Operating System :: POSIX :: Linux",
@@ -27,6 +28,8 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: System :: Benchmark",
     "Topic :: System :: Hardware",
     "Topic :: System :: Monitoring",
 ]

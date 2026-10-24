@@ -11,6 +11,10 @@ import unittest
 import agent_energy_profiler
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+#: a file of this repository on its main branch, as the README links to it
+REPO_FILE = (r"^(?:https://github\.com/VeiledTee/agent-energy-profiler/(?:blob|tree)/main/"
+             r"|https://raw\.githubusercontent\.com/VeiledTee/agent-energy-profiler/main/)"
+             r"([^#]+(?:#.*)?)$")
 
 
 def read(name):
@@ -31,6 +35,7 @@ class TestReleaseMetadata(unittest.TestCase):
 		self.assertEqual(version, agent_energy_profiler.__version__)
 		self.assertRegex(read("CHANGELOG.md"), rf"(?m)^## {re.escape(version)}\b")
 		self.assertIn(f"# Public API ({version})", read("docs/API.md"))
+		self.assertRegex(read("CITATION.cff"), rf"(?m)^version: {re.escape(version)}$")
 
 	def test_every_extra_is_documented_in_the_readme(self):
 		block = self.pyproject.split("[project.optional-dependencies]")[1].split("\n[")[0]
@@ -124,15 +129,42 @@ class TestReleaseMetadata(unittest.TestCase):
 		for page in pages:
 			text = re.sub(r"(?s)```.*?```", "", read(page))
 			for target in re.findall(r"\]\(([^)\s]+)\)", text):
-				if re.match(r"[a-z]+:", target):
+				base = page
+				own = re.match(REPO_FILE, target)
+				if own:
+					# the README's links to this repository: absolute, for PyPI
+					target, base = own.group(1), "README.md"
+				elif re.match(r"[a-z]+:", target):
 					continue
 				path, _, anchor = target.partition("#")
-				resolved = (os.path.normpath(os.path.join(os.path.dirname(page), path))
+				resolved = (os.path.normpath(os.path.join(os.path.dirname(base), path))
 				            if path else page)
 				self.assertTrue(os.path.exists(os.path.join(ROOT, resolved)),
 				                f"{page}: {target}")
 				if anchor and resolved.endswith(".md"):
 					self.assertIn(anchor, anchors(resolved), f"{page}: {target}")
+
+	# 0.5.0: the README is also the PyPI project page
+
+	def test_readme_links_work_on_pypi(self):
+		# PyPI resolves no relative link or image: a link to this repository's
+		# files must be absolute (and is checked above); anchors are fine
+		text = re.sub(r"(?s)```.*?```", "", read("README.md"))
+		targets = re.findall(r"\]\(([^)\s]+)\)", text)
+		self.assertTrue(any(re.match(REPO_FILE, t) for t in targets))
+		for target in targets:
+			self.assertRegex(target, r"^(https://|#)", target)
+		self.assertIn("pip install agent-energy-profiler\n", read("README.md"))
+
+	def test_citation_names_the_licence_and_repository_of_pyproject(self):
+		citation = read("CITATION.cff")
+		self.assertRegex(citation, r"(?m)^cff-version: 1\.2\.0$")
+		self.assertRegex(citation, r'(?m)^license: MIT$')
+		self.assertIn('license = "MIT"', self.pyproject)
+		self.assertIn('repository-code: "https://github.com/VeiledTee/agent-energy-profiler"',
+		              citation)
+		# no DOI is claimed until one has been assigned (docs/RELEASING.md)
+		self.assertNotIn("doi", citation.lower())
 
 
 if __name__ == "__main__":

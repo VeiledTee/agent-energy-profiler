@@ -10,6 +10,7 @@ import textwrap
 import threading
 import unittest
 
+import agent_energy_profiler
 from agent_energy_profiler import schema_v2
 from agent_energy_profiler.measurement import CallableReader, Resolution
 from agent_energy_profiler.session import Session
@@ -71,7 +72,7 @@ class TestLifecycle(SessionCase):
 		self.assertEqual([r["record_type"] for r in recs],
 		                 ["session_start", "span", "session_end"])
 		head = recs[0]
-		self.assertEqual(head["profiler_version"], "0.4.0")
+		self.assertEqual(head["profiler_version"], agent_energy_profiler.__version__)
 		self.assertEqual(head["config"]["energy_scope"], "device")
 		self.assertEqual(head["config"]["resolution"]["basis"], "configured")
 		self.assertEqual(head["attributes"], {"run_id": "r1"})

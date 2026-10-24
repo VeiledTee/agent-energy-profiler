@@ -7,48 +7,18 @@ Versions follow [Semantic Versioning](https://semver.org/); before 1.0, a
 minor release may change behaviour, and every such change is announced one
 minor release ahead with a warning.
 
-## 0.4.0 — unreleased
+## 0.5.0 — unreleased
 
-The first public release. Versions 0.1.0–0.3.0 below were development
-milestones and were never published.
+The first release published on PyPI. Versions 0.1.0–0.4.0 below were
+development milestones and were never published; installing 0.5.0 gives
+their changes too, so read 0.4.0 if you used the repository before.
 
-### Changed: the command is `agent-energy-profiler`
-
-- The command-line entry point is `agent-energy-profiler` (it was `aep`), the
-  same name as the distribution and the GitHub repository. The single-purpose
-  scripts are `agent-energy-profiler-sample`, `-attribute`, `-attribute-v2`,
-  `-validate`, `-aggregate` and `-visualize` (they were `aep-*`).
-  `python -m agent_energy_profiler` is unchanged, as is the import name
-  `agent_energy_profiler`. No `aep` alias is installed: no release ever
-  shipped it, and `aep` is already the name of an unrelated PyPI project.
-- `agent-energy-profiler run` without `--out-dir` writes to
-  `agent-energy-profiler-runs/<timestamp>` (it was `aep-runs/`).
-- Unchanged, because recorded data and other code depend on them: the
-  `AEP_*` environment variables, the OpenTelemetry attribute namespace
-  `aep.*` and its span-id derivation, and the recorded value
-  `mode_source: "aep_run"` (and the `run.json` key `aep_run_version`).
-
-### Changed: `Session`'s default mode is `auto`
-
-- **`Session()` without `mode=` now uses `auto`** (before: `direct`), as
-  `agent-energy-profiler run` already did. Without a hardware report showing that counter
-  reads are harmless on this configuration, `auto` resolves to `sampled`:
-  **per-span GPU energy becomes an estimate** (`estimates.gpu`) instead of
-  a counter measurement (`energy.gpu`), and measured GPU energy covers the
-  whole run. `Session.from_env()` follows the same default when neither
-  `agent-energy-profiler run`, `mode=` nor `default_mode=` chooses one.
-- **Comparing with earlier results:** check each artifact's `mode`,
-  `requested_mode` and `mode_source` (in the session header and on every
-  report's `measurement` line) before comparing per-span GPU numbers.
-  Whole-run measured GPU energy is comparable across modes. Pass
-  `mode="direct"` to reproduce 0.3.0 behaviour exactly.
-- `auto` now applies a `NOT_DETECTED` disturbance verdict only to the
-  configuration it was measured on: host name, NVIDIA driver version and
-  GPU models are compared where the hardware report and the running host
-  both know them. A report from another machine or driver selects
-  `sampled`, and `mode_reason` says why. `CounterDisturbance` records
-  `hostname` and `gpu_models` from the report (new optional header keys).
-- Explicit `mode="direct"`, `"sampled"` and `"hybrid"` are unchanged.
+**Measurement behaviour since 0.4.0: unchanged.** No measured or estimated
+value, report key, CSV column, schema field or attribution rule changed
+meaning. The v1 and v2 golden fixtures and the frozen research runs are
+reproduced exactly. One full text report gained an explanatory line
+(`est. gpu J`, below), and `Sampler.start()` returns slightly later (below);
+neither changes a recorded value.
 
 ### Added: `Session.profile()`
 
@@ -123,14 +93,15 @@ milestones and were never published.
   uses the reports' own rules. Path rows are the same accounting grouped by
   hierarchy path (`report._build(key=...)`). The page only displays, sorts
   and filters.
-- Shareable by default: attributes are left out unless named
-  (`--attributes`) or all allowed (`--all-attributes`). Host names, file
-  paths and span, trace and session ids are left out. A
-  Content-Security-Policy allows only the page's own script and style, and
-  no network access.
-- Operation labels are kept as written. `report --html` warns when they
-  look like free text (prompts or user input), and `--redact-labels`
-  replaces them with `operation N`.
+- Attributes and identifying system metadata are left out by default:
+  attributes unless named (`--attributes`) or all allowed
+  (`--all-attributes`); host names, file paths and span, trace and session
+  ids always. A Content-Security-Policy allows only the page's own script
+  and style, and no network access.
+- Operation labels are not left out: the labels your code chose are kept
+  as written unless `--redact-labels` replaces them with `operation N`.
+  `report --html` warns when they look like free text (prompts or user
+  input). Check a report before sharing it.
 
 ### Fixed: `est. gpu J` in the full report
 
@@ -147,13 +118,104 @@ milestones and were never published.
   then could not build a report. It now reports whole-program energy only,
   says why, and exits with the program's exit code.
 
-### Fixed: sampler start
+### Fixed: report on attributed spans without `session_summary.json`
+
+- `report.build` (and `agent-energy-profiler report` / `export`) raised
+  `TypeError` when `spans_attributed.jsonl` had been copied without its
+  `session_summary.json` and some spans were flagged below resolution. It
+  now returns a partial report: totals, operations and coverage from the
+  spans, a new `SUMMARY_MISSING` warning saying what is absent and how to
+  get it, and the measurement and window sections marked unknown because
+  the summary is missing (they used to claim an old session or no
+  timeline). `BELOW_RESOLUTION` gives the interval only when it is known;
+  `RESOLUTION_UNKNOWN` is raised only for spans that were not flagged.
+- `agent-energy-profiler report` and `export` print an error and exit 2 for
+  a missing, empty or unrecognised input instead of a traceback.
+
+### Fixed: report wording
+
+- `BELOW_RESOLUTION` no longer calls below-resolution readings "biased low":
+  quantisation can err in either direction. It now says the reported energy
+  is quantised and may not reliably represent the span's consumption (also
+  in the README, `docs/SCHEMA_V2.md` and `docs/OPENTELEMETRY.md`). The
+  counter-disturbance warnings, which do describe a downward bias, are
+  unchanged.
+
+### Measurement timing: sampler start
 
 - `Sampler.start()` returns only once the clock has passed the first row's
   timestamp. Rows are stamped rounded to the millisecond, so a span opened
   within 0.5 ms of `start()` could begin before the timeline's first row and
   be refused by attribution as uncovered. Only the timing of `start()`
   changes; nothing recorded changes meaning.
+
+### Project
+
+- Packaged for PyPI as `agent-energy-profiler`: the README installs from
+  PyPI, and its links and images are absolute so that they also work on the
+  PyPI project page. The package docstring's quick start uses
+  `Session.profile` instead of the legacy v1 `profiler.span`.
+- `CITATION.cff` with the software's citation metadata. No DOI has been
+  assigned yet.
+- `docs/RELEASING.md`: a release checklist, PyPI trusted publishing and
+  Zenodo archiving (both still to be enabled by the maintainer).
+- Hosted CI on GitHub Actions passes on Python 3.9–3.14, the wheel checks
+  and the LangGraph tests; jobs are pinned to `ubuntu-24.04`.
+- README reorganised for first-time users: what the profiler does, a
+  runnable quick start (`examples/quickstart.py`, checked by a test to
+  match the README) with real output, the two ways to run (`run` vs
+  `Session` in Python), choosing a measurement mode, platform support,
+  troubleshooting, then the measurement limitations. Install commands use
+  `python3 -m venv` (stock Ubuntu has no `python`). The v1 → v2 API table
+  moved to `docs/SCHEMA_V2.md`, the opt-in test commands to
+  `CONTRIBUTING.md`. A test checks that relative links in the README, docs
+  and examples resolve.
+- `agent-energy-profiler run` says when no GPU energy counter is available
+  and what to do (install the `gpu` extra, or run `validate`). The message
+  goes to stderr only; nothing recorded changes.
+
+## 0.4.0 — never published
+
+A development milestone, like 0.1.0–0.3.0 below. Its changes are
+included in 0.5.0, the first published release.
+
+### Changed: the command is `agent-energy-profiler`
+
+- The command-line entry point is `agent-energy-profiler` (it was `aep`), the
+  same name as the distribution and the GitHub repository. The single-purpose
+  scripts are `agent-energy-profiler-sample`, `-attribute`, `-attribute-v2`,
+  `-validate`, `-aggregate` and `-visualize` (they were `aep-*`).
+  `python -m agent_energy_profiler` is unchanged, as is the import name
+  `agent_energy_profiler`. No `aep` alias is installed: no release ever
+  shipped it, and `aep` is already the name of an unrelated PyPI project.
+- `agent-energy-profiler run` without `--out-dir` writes to
+  `agent-energy-profiler-runs/<timestamp>` (it was `aep-runs/`).
+- Unchanged, because recorded data and other code depend on them: the
+  `AEP_*` environment variables, the OpenTelemetry attribute namespace
+  `aep.*` and its span-id derivation, and the recorded value
+  `mode_source: "aep_run"` (and the `run.json` key `aep_run_version`).
+
+### Changed: `Session`'s default mode is `auto`
+
+- **`Session()` without `mode=` now uses `auto`** (before: `direct`), as
+  `agent-energy-profiler run` already did. Without a hardware report showing that counter
+  reads are harmless on this configuration, `auto` resolves to `sampled`:
+  **per-span GPU energy becomes an estimate** (`estimates.gpu`) instead of
+  a counter measurement (`energy.gpu`), and measured GPU energy covers the
+  whole run. `Session.from_env()` follows the same default when neither
+  `agent-energy-profiler run`, `mode=` nor `default_mode=` chooses one.
+- **Comparing with earlier results:** check each artifact's `mode`,
+  `requested_mode` and `mode_source` (in the session header and on every
+  report's `measurement` line) before comparing per-span GPU numbers.
+  Whole-run measured GPU energy is comparable across modes. Pass
+  `mode="direct"` to reproduce 0.3.0 behaviour exactly.
+- `auto` now applies a `NOT_DETECTED` disturbance verdict only to the
+  configuration it was measured on: host name, NVIDIA driver version and
+  GPU models are compared where the hardware report and the running host
+  both know them. A report from another machine or driver selects
+  `sampled`, and `mode_reason` says why. `CounterDisturbance` records
+  `hostname` and `gpu_models` from the report (new optional header keys).
+- Explicit `mode="direct"`, `"sampled"` and `"hybrid"` are unchanged.
 
 ### Deprecated
 
@@ -180,29 +242,9 @@ milestones and were never published.
   never measured for a hardware reason.
 - The text report states what per-span and whole-run GPU energy mean in the
   recorded mode.
-- `BELOW_RESOLUTION` no longer calls below-resolution readings "biased low":
-  quantisation can err in either direction. It now says the reported energy
-  is quantised and may not reliably represent the span's consumption (also
-  in the README, `docs/SCHEMA_V2.md` and `docs/OPENTELEMETRY.md`). The
-  counter-disturbance warnings, which do describe a downward bias, are
-  unchanged.
 - New report keys: `totals.domains.*.missing_reasons`,
   `totals.estimated_gpu.{n_top_level, n_without_gpu_value,
   without_gpu_value_reasons, reason}`.
-
-### Fixed: report on attributed spans without `session_summary.json`
-
-- `report.build` (and `agent-energy-profiler report` / `export`) raised
-  `TypeError` when `spans_attributed.jsonl` had been copied without its
-  `session_summary.json` and some spans were flagged below resolution. It
-  now returns a partial report: totals, operations and coverage from the
-  spans, a new `SUMMARY_MISSING` warning saying what is absent and how to
-  get it, and the measurement and window sections marked unknown because
-  the summary is missing (they used to claim an old session or no
-  timeline). `BELOW_RESOLUTION` gives the interval only when it is known;
-  `RESOLUTION_UNKNOWN` is raised only for spans that were not flagged.
-- `agent-energy-profiler report` and `export` print an error and exit 2 for
-  a missing, empty or unrecognised input instead of a traceback.
 
 ### Project
 
@@ -212,20 +254,6 @@ milestones and were never published.
   measurement's limits up front.
 - `results/` (raw counter-disturbance data) documented, with the
   developer's host name and local paths redacted.
-- Hosted CI on GitHub Actions passes on Python 3.9–3.14, the wheel checks
-  and the LangGraph tests; jobs are pinned to `ubuntu-24.04`.
-- README reorganised for first-time users: what the profiler does, a
-  runnable quick start (`examples/quickstart.py`, checked by a test to
-  match the README) with real output, the two ways to run (`run` vs
-  `Session` in Python), choosing a measurement mode, platform support,
-  troubleshooting, then the measurement limitations. Install commands use
-  `python3 -m venv` (stock Ubuntu has no `python`). The v1 → v2 API table
-  moved to `docs/SCHEMA_V2.md`, the opt-in test commands to
-  `CONTRIBUTING.md`. A test checks that relative links in the README, docs
-  and examples resolve.
-- `agent-energy-profiler run` says when no GPU energy counter is available
-  and what to do (install the `gpu` extra, or run `validate`). The message
-  goes to stderr only; nothing recorded changes.
 
 ### Unchanged
 

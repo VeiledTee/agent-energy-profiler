@@ -45,13 +45,13 @@ was obtained.
 
 ![Workflow explorer: agent:answer with its children llm:generate,
 retrieval:search and verify:check, each with time, estimated GPU energy and
-share](docs/images/workflow-explorer.png)
+share](https://raw.githubusercontent.com/VeiledTee/agent-energy-profiler/main/docs/images/workflow-explorer.png)
 
 *A real report of the [quick start](#quick-start) below (NVIDIA RTX 4090,
 WSL2, default mode). The workload is CPU-only, so its GPU values, estimates
 marked `~`, mainly reflect the GPU's idle draw while each step ran.*
 
-> **Status:** beta (0.4.0). Install from GitHub; not on PyPI yet. The
+> **Status:** beta (0.5.0), `pip install agent-energy-profiler`. The
 > numbers are whole-device hardware readings, not per-process energy, and
 > their accuracy has not been checked against an external meter. See
 > [Measurement limitations](#measurement-limitations) before relying on them.
@@ -66,14 +66,14 @@ venv` needs the `python3-venv` package.)
 
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
-pip install "agent-energy-profiler @ git+https://github.com/VeiledTee/agent-energy-profiler"
+pip install agent-energy-profiler
 ```
 
 With an NVIDIA GPU (optional), install the `gpu` extra instead, so that GPU
 energy can be read:
 
 ```bash
-pip install "agent-energy-profiler[gpu] @ git+https://github.com/VeiledTee/agent-energy-profiler"
+pip install "agent-energy-profiler[gpu]"
 ```
 
 **2. Save this as `quickstart.py`.** It is a three-step pipeline in pure
@@ -117,7 +117,7 @@ with Session.profile("quickstart") as session:
 ```
 
 The same file is in the repository as
-[examples/quickstart.py](examples/quickstart.py).
+[examples/quickstart.py](https://github.com/VeiledTee/agent-energy-profiler/blob/main/examples/quickstart.py).
 
 **3. Run it:**
 
@@ -361,7 +361,7 @@ hidden: the raw files stay in the run directory, `profile_status` is
 
 **Lower-level API.** `Session(path, sampler=Sampler(...))` with
 `analyze(session)` gives full control over paths and the sampler
-([docs/API.md](docs/API.md)). `Session.from_env(path)` is for programs
+([docs/API.md](https://github.com/VeiledTee/agent-energy-profiler/blob/main/docs/API.md)). `Session.from_env(path)` is for programs
 written only for `run`; on its own it starts no sampler, so in the default
 mode it records timings but no energy.
 
@@ -388,20 +388,20 @@ appears in the span that waits for it.
 
 - **LangGraph:** decorate node functions with `session.trace(label)`. Tested
   with LangGraph 1.2.15 for sync and async graphs with parallel branches
-  ([docs/LANGGRAPH.md](docs/LANGGRAPH.md)).
+  ([docs/LANGGRAPH.md](https://github.com/VeiledTee/agent-energy-profiler/blob/main/docs/LANGGRAPH.md)).
 - **OpenTelemetry** (`[otel]` extra): profiler spans join your application's
   current trace while the program runs (`Session(..., hooks=[otel.Correlation()])`).
   After attribution, `agent-energy-profiler otel-export` or
   `otel.export_spans(run_dir, exporter)` sends every span with its energy
   as `aep.*` attributes. Measured, estimated and missing values stay
   distinguishable. Your global OpenTelemetry configuration is never
-  changed ([docs/OPENTELEMETRY.md](docs/OPENTELEMETRY.md)).
+  changed ([docs/OPENTELEMETRY.md](https://github.com/VeiledTee/agent-energy-profiler/blob/main/docs/OPENTELEMETRY.md)).
 
 ## Choosing a measurement mode
 
 How often the GPU energy counter is read is a setting, because on at least
 one machine every read lowered what the counter reported
-([docs/NVML_COUNTER_VALIDATION.md](docs/NVML_COUNTER_VALIDATION.md)).
+([docs/NVML_COUNTER_VALIDATION.md](https://github.com/VeiledTee/agent-energy-profiler/blob/main/docs/NVML_COUNTER_VALIDATION.md)).
 
 | Mode | Per-span GPU energy | Measured GPU energy |
 |---|---|---|
@@ -430,19 +430,18 @@ one machine every read lowered what the counter reported
   pass `mode="direct"` to keep that.
 
 Every artifact and report records the mode, who chose it and why. Details:
-[docs/MEASUREMENT_MODES.md](docs/MEASUREMENT_MODES.md).
+[docs/MEASUREMENT_MODES.md](https://github.com/VeiledTee/agent-energy-profiler/blob/main/docs/MEASUREMENT_MODES.md).
 
 ## Installation and platform support
 
-From GitHub (not on PyPI yet):
-
 ```bash
-pip install "agent-energy-profiler @ git+https://github.com/VeiledTee/agent-energy-profiler"
+pip install agent-energy-profiler                 # core: no dependencies
+pip install "agent-energy-profiler[gpu,otel]"     # with extras
 ```
 
-Or from a clone: `pip install .`, or `pip install -e '.[test]'` to develop.
-Optional extras, in either form (`"agent-energy-profiler[gpu,otel] @ git+..."`
-or `'.[gpu,otel]'`):
+The development version: `pip install "agent-energy-profiler @
+git+https://github.com/VeiledTee/agent-energy-profiler"`, or from a clone
+`pip install .` (`pip install -e '.[test]'` to develop). Optional extras:
 
 | Extra | Adds | Needed for |
 |---|---|---|
@@ -505,10 +504,10 @@ The profiler reports what the hardware counters report. In particular:
   RTX 4090 with driver 610.88 under WSL2, frequent reads of the NVML energy
   counter lowered what it reported (~10% at a 10 Hz sampler). Other GPUs and
   drivers are untested; `agent-energy-profiler validate --counter-disturbance`
-  checks yours ([docs/NVML_COUNTER_VALIDATION.md](docs/NVML_COUNTER_VALIDATION.md)).
+  checks yours ([docs/NVML_COUNTER_VALIDATION.md](https://github.com/VeiledTee/agent-energy-profiler/blob/main/docs/NVML_COUNTER_VALIDATION.md)).
 - **Accuracy has not been established against an independent meter.** No
   value has been compared with an external power meter
-  ([docs/HARDWARE_VALIDATION_PROTOCOL.md](docs/HARDWARE_VALIDATION_PROTOCOL.md)
+  ([docs/HARDWARE_VALIDATION_PROTOCOL.md](https://github.com/VeiledTee/agent-energy-profiler/blob/main/docs/HARDWARE_VALIDATION_PROTOCOL.md)
   describes how it would be).
 - **RAPL (CPU package, DRAM) has not been validated on real hardware.** It is
   tested only with synthetic counters.
@@ -524,7 +523,7 @@ The profiler reports what the hardware counters report. In particular:
   starting it took about 50 ms and closing about 0.2 s, plus attribution.
 
 The attribution logic is regression-tested against reference artifacts
-from the research runs it was extracted from ([docs/PROVENANCE.md](docs/PROVENANCE.md)).
+from the research runs it was extracted from ([docs/PROVENANCE.md](https://github.com/VeiledTee/agent-energy-profiler/blob/main/docs/PROVENANCE.md)).
 That shows the computation is reproduced exactly, not that the energy
 values are correct.
 
@@ -534,7 +533,7 @@ values are correct.
 |---|---|
 | `agent-energy-profiler run [--mode M] [--hardware-report hw.json] [--out-dir D] -- CMD` | runs CMD with the sampler on, records whole-program energy in `run.json`, and attributes and reports the program's spans |
 | `agent-energy-profiler report DIR_OR_FILE [--brief \| --format text\|json\|csv]` | the report of a run; `--brief` gives the one-screen summary |
-| `agent-energy-profiler report DIR_OR_FILE --html report.html` | a self-contained, offline HTML report: workflow explorer, operation breakdown, provenance; attributes left out unless allowed, `--redact-labels` for labels that hold user input ([docs/HTML_REPORT.md](docs/HTML_REPORT.md)) |
+| `agent-energy-profiler report DIR_OR_FILE --html report.html` | a self-contained, offline HTML report: workflow explorer, operation breakdown, provenance. Attributes, host names, paths and ids are left out; operation labels are kept as written unless `--redact-labels` ([docs/HTML_REPORT.md](https://github.com/VeiledTee/agent-energy-profiler/blob/main/docs/HTML_REPORT.md)) |
 | `agent-energy-profiler export DIR_OR_FILE --out-dir D` | `spans.csv`, `operations.csv`, `report.json` |
 | `agent-energy-profiler validate [--json hw.json] [--counter-disturbance]` | what this host can measure, the GPU counter's update interval, and optionally the disturbance test (~30 s) |
 | `agent-energy-profiler attribute FILE --power power.csv` | joins recorded spans with a hardware timeline (what `run` does for you) |
@@ -555,18 +554,19 @@ OpenTelemetry attribute namespace `aep.*`, and the recorded value
 
 | Topic | Where |
 |---|---|
-| Full walkthrough: an agent from install to report, measured vs estimated, concurrency | [examples/agent_workflow](examples/agent_workflow/) |
-| More examples: CPU-only work, GPU inference, an OpenTelemetry-traced service | [examples/](examples/) |
-| Public Python API and compatibility policy | [docs/API.md](docs/API.md) |
-| Measurement modes, defaults and migration | [docs/MEASUREMENT_MODES.md](docs/MEASUREMENT_MODES.md) |
-| Span file format and every report field | [docs/SCHEMA_V2.md](docs/SCHEMA_V2.md) |
-| HTML report: views, privacy, view-model contract | [docs/HTML_REPORT.md](docs/HTML_REPORT.md) |
-| OpenTelemetry correlation and export | [docs/OPENTELEMETRY.md](docs/OPENTELEMETRY.md) |
-| LangGraph | [docs/LANGGRAPH.md](docs/LANGGRAPH.md) |
-| GPU counter disturbance study | [docs/NVML_COUNTER_VALIDATION.md](docs/NVML_COUNTER_VALIDATION.md), raw data in [results/](results/README.md) |
-| How accuracy would be validated with an external meter | [docs/HARDWARE_VALIDATION_PROTOCOL.md](docs/HARDWARE_VALIDATION_PROTOCOL.md) |
-| Origin, reference artifacts and change log of measurement semantics | [docs/PROVENANCE.md](docs/PROVENANCE.md) |
-| Release notes | [CHANGELOG.md](CHANGELOG.md) |
+| Full walkthrough: an agent from install to report, measured vs estimated, concurrency | [examples/agent_workflow](https://github.com/VeiledTee/agent-energy-profiler/tree/main/examples/agent_workflow) |
+| More examples: CPU-only work, GPU inference, an OpenTelemetry-traced service | [examples/](https://github.com/VeiledTee/agent-energy-profiler/tree/main/examples) |
+| Public Python API and compatibility policy | [docs/API.md](https://github.com/VeiledTee/agent-energy-profiler/blob/main/docs/API.md) |
+| Measurement modes, defaults and migration | [docs/MEASUREMENT_MODES.md](https://github.com/VeiledTee/agent-energy-profiler/blob/main/docs/MEASUREMENT_MODES.md) |
+| Span file format and every report field | [docs/SCHEMA_V2.md](https://github.com/VeiledTee/agent-energy-profiler/blob/main/docs/SCHEMA_V2.md) |
+| HTML report: views, privacy, view-model contract | [docs/HTML_REPORT.md](https://github.com/VeiledTee/agent-energy-profiler/blob/main/docs/HTML_REPORT.md) |
+| OpenTelemetry correlation and export | [docs/OPENTELEMETRY.md](https://github.com/VeiledTee/agent-energy-profiler/blob/main/docs/OPENTELEMETRY.md) |
+| LangGraph | [docs/LANGGRAPH.md](https://github.com/VeiledTee/agent-energy-profiler/blob/main/docs/LANGGRAPH.md) |
+| GPU counter disturbance study | [docs/NVML_COUNTER_VALIDATION.md](https://github.com/VeiledTee/agent-energy-profiler/blob/main/docs/NVML_COUNTER_VALIDATION.md), raw data in [results/](https://github.com/VeiledTee/agent-energy-profiler/blob/main/results/README.md) |
+| How accuracy would be validated with an external meter | [docs/HARDWARE_VALIDATION_PROTOCOL.md](https://github.com/VeiledTee/agent-energy-profiler/blob/main/docs/HARDWARE_VALIDATION_PROTOCOL.md) |
+| Origin, reference artifacts and change log of measurement semantics | [docs/PROVENANCE.md](https://github.com/VeiledTee/agent-energy-profiler/blob/main/docs/PROVENANCE.md) |
+| Release notes | [CHANGELOG.md](https://github.com/VeiledTee/agent-energy-profiler/blob/main/CHANGELOG.md) |
+| Citing this software | [CITATION.cff](https://github.com/VeiledTee/agent-energy-profiler/blob/main/CITATION.cff) |
 
 ### Reading the report
 
@@ -593,7 +593,14 @@ Files written by the older functional API (`profiler.span`,
 `profiler.configure`; `events.jsonl`) are still read by `report`, `export`
 and `attribute`, and their attribution is unchanged. New code should use
 `Session`. The v1 → v2 mapping is in
-[docs/SCHEMA_V2.md](docs/SCHEMA_V2.md#reading-v1-as-v2).
+[docs/SCHEMA_V2.md](https://github.com/VeiledTee/agent-energy-profiler/blob/main/docs/SCHEMA_V2.md#reading-v1-as-v2).
+
+## Citing
+
+If you use the profiler in research, cite the software with the metadata in
+[CITATION.cff](https://github.com/VeiledTee/agent-energy-profiler/blob/main/CITATION.cff) (GitHub's "Cite this repository" button reads
+it), and report the version, the measurement mode and the hardware each
+result comes from. There is no DOI and no paper about the profiler yet.
 
 ## Contributing and development
 
@@ -604,12 +611,12 @@ pip install -e '.[test]'
 python -m pytest          # run with TMPDIR outside any git working tree
 ```
 
-[CONTRIBUTING.md](CONTRIBUTING.md) covers the opt-in hardware and
+[CONTRIBUTING.md](https://github.com/VeiledTee/agent-energy-profiler/blob/main/CONTRIBUTING.md) covers the opt-in hardware and
 frozen-run tests, wheel checks and the rules for changes:
 `tests/golden/` and `tests/golden_v2/` hold reference artifacts and are
 never regenerated to make a test pass. No AI tool appears as a Git author
 or co-author; enable the commit-message guard once per clone with
 `git config core.hooksPath scripts/git-hooks`.
 
-Security reports: [SECURITY.md](SECURITY.md) (private vulnerability
-reporting). Licence: MIT ([LICENSE](LICENSE)).
+Security reports: [SECURITY.md](https://github.com/VeiledTee/agent-energy-profiler/blob/main/SECURITY.md) (private vulnerability
+reporting). Licence: MIT ([LICENSE](https://github.com/VeiledTee/agent-energy-profiler/blob/main/LICENSE)).

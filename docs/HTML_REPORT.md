@@ -1,7 +1,7 @@
 # HTML report
 
 ```bash
-agent-energy-profiler report RUN --html report.html                # attributes left out
+agent-energy-profiler report RUN --html report.html                # attributes left out; labels kept
 agent-energy-profiler report RUN --html report.html --attributes question,model
 agent-energy-profiler report RUN --html report.html --all-attributes   # everything: check before sharing
 agent-energy-profiler report RUN --html report.html --redact-labels    # labels become "operation N"
@@ -69,7 +69,12 @@ hierarchy path, so ranked path values never count a span twice.
 
 ## Privacy
 
-The file is meant to be shareable, so by default it leaves out:
+The file is not private by default. It leaves out span attributes and
+identifying system metadata, but it **keeps the operation labels your code
+chose**, and everything needed to read the measurements. Check it before
+you share it.
+
+Left out by default:
 
 - every span and session attribute (`--attributes NAME,...` keeps the
   named ones, `--all-attributes` keeps all);
@@ -80,6 +85,10 @@ The file is meant to be shareable, so by default it leaves out:
 The run's directory path, your home directory and host names are removed
 from text copied from the recording. The report is refused if any of them
 would remain.
+
+Kept: operation labels (unless `--redact-labels`), the run's name, span
+timings, statuses and error types, token counts, the measurement mode,
+and the GPU models and driver version.
 
 **Operation labels are included as you wrote them**, because they are what
 makes the report useful. If a label contains user data
